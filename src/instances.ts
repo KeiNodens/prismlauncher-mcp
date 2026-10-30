@@ -64,9 +64,18 @@ function summarize(id: string, dir: string): InstanceSummary {
 export function listInstances(cfg: PrismConfig): InstanceSummary[] {
   const root = instancesDir(cfg.dataDir);
   if (!fs.existsSync(root)) return [];
+  // Follow symlinks/junctions: instances may live on external or network
+  // storage and be linked into this folder (Dirent.isDirectory() is false
+  // for links, so stat the target instead).
   return fs
     .readdirSync(root, { withFileTypes: true })
-    .filter((e) => e.isDirectory())
+    .filter((e) => {
+      try {
+        return fs.statSync(path.join(root, e.name)).isDirectory();
+      } catch {
+        return false;
+      }
+    })
     .map((e) => summarize(e.name, path.join(root, e.name)))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
