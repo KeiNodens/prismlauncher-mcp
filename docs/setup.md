@@ -66,3 +66,22 @@ Each prism-mcp process is bound to exactly one data dir. To let an agent work
 on both a test dir and your real data, register two server entries with
 different names (e.g. `prism-test`, `prism`) — and keep the real one
 `--read-only` until you trust the workflow.
+
+## NAS-backed instances (Buffalo LinkStation)
+
+Instances that live on the NAS (`\\LS220D63E\Share\ゲーム保存\minecraftinstance`)
+are linked into `instances/` as per-instance symbolic links, so Prism and
+prism-mcp see one flat list.
+
+- A desktop session that already maps the NAS (e.g. drive `L:`) needs nothing.
+- A session without NAS credentials (Rin's SSH session cannot see the
+  interactive Credential Manager vault) needs the bootstrap: set
+  `PRISM_NAS_BOOTSTRAP=1`. At startup prism-mcp runs
+  `C:\dev\prism\tools\nas-mount.ps1`, which decrypts the DPAPI
+  (LocalMachine-scope) credential stored in `C:\dev\prism\nas-cred.json`
+  **inside the PC** and connects the share with `net use`. The password never
+  appears in chat, command lines from outside, or this repository.
+- One-time credential setup (desktop session, console prompt):
+  `powershell -ExecutionPolicy Bypass -File C:\dev\prism\tools\setup-nas-cred-console.ps1`
+- LocalMachine DPAPI means any local account on the PC can decrypt the blob.
+  That trade-off was explicitly accepted by the owner for this home PC.
