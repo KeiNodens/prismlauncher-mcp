@@ -13,7 +13,7 @@ const execFileP = promisify(execFile);
 // desktop sessions (which already have their own NAS connection) are
 // untouched.
 export async function bootstrapNas(): Promise<void> {
-  if (process.env.PRISM_NAS_BOOTSTRAP !== "1") return;
+  if ((process.env.PRISM_NAS_BOOTSTRAP ?? "").trim() !== "1") return;
   const credFile = process.env.PRISM_NAS_CRED ?? "C:\\dev\\prism\\nas-cred.json";
   if (!fs.existsSync(credFile)) {
     console.error(`prism-mcp: PRISM_NAS_BOOTSTRAP=1 but no cred file at ${credFile}`);
