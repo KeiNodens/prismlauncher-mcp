@@ -53,11 +53,20 @@ install location (`%LOCALAPPDATA%\Programs\PrismLauncher`) or on `PATH`.
 ## Tools
 
 **Instances:** `list_instances`, `get_instance`, `create_instance`,
-`delete_instance`, `list_groups`, `list_versions`
+`clone_instance`, `delete_instance`, `set_instance_setting`, `list_groups`,
+`list_versions`
+
+**Settings:** `get_settings`, `set_setting` (global `prismlauncher.cfg`)
 
 **Mods (Modrinth):** `search_mods`, `install_mod` (required dependencies are
 installed recursively and reported; optional ones are only reported),
-`list_mods`
+`list_mods`, `remove_mod`, `set_mod_enabled`, `check_mod_updates`
+
+**Modpacks:** `import_modpack` (.mrpack: instance creation from the pack's
+declared dependencies, sha1-verified downloads, overrides extraction)
+
+**Worlds & options:** `list_worlds`, `get_world` (level.dat), `get_options`,
+`set_option` (options.txt)
 
 **Game:** `launch_instance`, `get_instance_status`, `tail_log`,
 `wait_for_event`, `stop_instance`, `list_screenshots`, `get_screenshot`
@@ -69,9 +78,11 @@ client configuration.
 
 ## Status
 
-v0.1.0 — Phase 1 demo path implemented and verified end-to-end at the file
-level (create instance → install mod → files validated). The final launch leg
-requires running Prism in a desktop session.
+v0.1.0 — Phase 1 implemented and verified at the file level, including the
+demo path (create instance → install mod → files validated), clone/settings,
+mod update checks, world inspection and .mrpack import. The final launch leg
+requires running Prism in a desktop session. A repeatable smoke test lives in
+`scripts/smoke.mjs`.
 
 ## License
 

@@ -65,7 +65,23 @@ notify("notifications/initialized");
 
 const before = await tool("list_instances", {});
 console.log(`instances before: ${before.length}`);
-if (before.some((i) => i.id === NAME)) await tool("delete_instance", { id: NAME, confirm: true });
+if (before.some((i) => i.id === NAME)) const upd = await tool("check_mod_updates", { instance: NAME });
+console.log("update check:", JSON.stringify(upd[0]));
+
+const disabled = await tool("set_mod_enabled", { instance: NAME, file: installed.file, enabled: false });
+console.log("disabled:", disabled.file);
+const enabled = await tool("set_mod_enabled", { instance: NAME, file: disabled.file, enabled: true });
+console.log("re-enabled:", enabled.file, enabled.changed);
+
+await tool("set_option", { instance: NAME, key: "fov", value: "0.5" });
+const opts = await tool("get_options", { instance: NAME });
+console.log("option fov:", opts.fov);
+
+const clone = await tool("clone_instance", { id: NAME, newName: NAME + "-clone" });
+console.log("cloned:", clone.id);
+await tool("delete_instance", { id: clone.id, confirm: true });
+
+await tool("delete_instance", { id: NAME, confirm: true });
 
 const created = await tool("create_instance", { name: NAME, mcVersion: "1.20.1", loader: "forge" });
 console.log("created:", created.id, created.components.map((c) => `${c.uid}@${c.version}`).join(", "));
