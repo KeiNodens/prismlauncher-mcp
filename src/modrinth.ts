@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { instanceDir, type PrismConfig } from "./config.js";
-import { audit, backupFiles, requireWritable } from "./safety.js";
+import { audit, backupFiles, requireConfirm, requireWritable } from "./safety.js";
 
 // Modrinth API v2 (no key required). Install writes the jar into the right
 // subfolder and a packwiz-style index file into .index/<slug>.pw.toml so the
@@ -65,6 +65,7 @@ interface MrVersion {
   version_number: string;
   version_type: string;
   game_versions: string[];
+  date_published?: string;
   loaders: string[];
   files: Array<{ url: string; filename: string; primary: boolean; hashes: { sha1: string; sha512: string } }>;
   dependencies: Array<{ project_id: string; version_id?: string; dependency_type: string; file_name?: string }>;
@@ -212,4 +213,105 @@ export function listMods(cfg: PrismConfig, instanceId: string) {
     .filter((f) => f.endsWith(".jar") || f.endsWith(".jar.disabled"))
     .sort()
     .map((f) => ({ file: f, enabled: !f.endsWith(".disabled") }));
+}
+
+function modsDir(cfg: PrismConfig, instanceId: string): string {
+  return path.join(instanceDir(cfg.dataDir, instanceId), "minecraft", "mods");
+}
+
+function resolveModFile(cfg: PrismConfig, instanceId: string, file: string): string {
+  if (file.includes("/") || file.includes("\\") || file.includes("..")) {
+    throw new Error("invalid mod file name");
+  }
+  const p = path.join(modsDir(cfg, instanceId), file);
+  if (!fs.existsSync(p)) throw new Error(`mod file not found: ${file}`);
+  return p;
+}
+
+export function removeMod(cfg: PrismConfig, instanceId: string, file: string, confirm?: boolean) {
+  requireWritable(cfg);
+  requireConfirm("remove_mod", confirm);
+  const p = resolveModFile(cfg, instanceId, file);
+  backupFiles(cfg, [p]);
+  fs.rmSync(p);
+  // Drop the packwiz index entry too, so Prism does not show a ghost.
+  const slug = file.replace(/\.jar(\.disabled)?$/, "");
+  const indexDir = path.join(modsDir(cfg, instanceId), ".index");
+  if (fs.existsSync(indexDir)) {
+    for (const f of fs.readdirSync(indexDir)) {
+      if (f.endsWith(".pw.toml")) {
+        const content = fs.readFileSync(path.join(indexDir, f), "utf8");
+        if (content.includes(`filename = "${file.replace(/\.disabled$/, "")}"`)) {
+          fs.rmSync(path.join(indexDir, f));
+        }
+      }
+    }
+  }
+  audit(cfg, "remove_mod", instanceId, { file });
+  return { removed: file, instance: instanceId, slug };
+}
+
+export function setModEnabled(cfg: PrismConfig, instanceId: string, file: string, enabled: boolean) {
+  requireWritable(cfg);
+  const p = resolveModFile(cfg, instanceId, file);
+  const isDisabled = p.endsWith(".disabled");
+  if (enabled === !isDisabled) return { file, enabled, changed: false };
+  const dest = enabled ? p.slice(0, -".disabled".length) : p + ".disabled";
+  fs.renameSync(p, dest);
+  audit(cfg, "set_mod_enabled", instanceId, { file, enabled });
+  return { file: path.basename(dest), enabled, changed: true };
+}
+
+interface VersionFileHit {
+  project_id: string;
+  id: string;
+  version_number: string;
+  date_published: string;
+}
+
+export async function checkModUpdates(cfg: PrismConfig, instanceId: string) {
+  const dir = modsDir(cfg, instanceId);
+  if (!fs.existsSync(dir)) return [];
+  const { getInstance } = await import("./instances.js");
+  const inst = getInstance(cfg, instanceId);
+  const jars = fs.readdirSync(dir).filter((f) => f.endsWith(".jar"));
+  const hashes = new Map<string, string>();
+  for (const jar of jars) {
+    hashes.set(sha1(fs.readFileSync(path.join(dir, jar))), jar);
+  }
+  if (hashes.size === 0) return [];
+  const res = await fetch(`${API}/version_files`, {
+    method: "POST",
+    headers: { "User-Agent": UA, "Content-Type": "application/json" },
+    body: JSON.stringify({ hashes: [...hashes.keys()], algorithm: "sha1" }),
+  });
+  if (!res.ok) throw new Error(`Modrinth version_files -> HTTP ${res.status}`);
+  const byHash = (await res.json()) as Record<string, VersionFileHit>;
+  const report: Array<Record<string, unknown>> = [];
+  for (const [hash, jar] of hashes) {
+    const current = byHash[hash];
+    if (!current) {
+      report.push({ file: jar, known: false });
+      continue;
+    }
+    const versions = await listProjectVersions(current.project_id);
+    const newer = versions
+      .filter(
+        (v) =>
+          (!inst.mcVersion || v.game_versions.includes(inst.mcVersion)) &&
+          (!inst.loader || v.loaders.includes(inst.loader)) &&
+          new Date(v.date_published ?? 0).getTime() > 0,
+      )
+      .sort((a, b) => (b.date_published ?? "").localeCompare(a.date_published ?? ""));
+    const latest = newer[0];
+    report.push({
+      file: jar,
+      known: true,
+      project: current.project_id,
+      currentVersion: current.version_number,
+      latestVersion: latest?.version_number,
+      updateAvailable: !!latest && latest.id !== current.id,
+    });
+  }
+  return report;
 }

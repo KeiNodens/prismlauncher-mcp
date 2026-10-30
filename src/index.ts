@@ -5,12 +5,18 @@ import { z } from "zod";
 import { loadConfig } from "./config.js";
 import { bootstrapNas } from "./nas.js";
 import {
+  cloneInstance,
   createInstance,
   deleteInstance,
   getInstance,
   listGroups,
   listInstances,
+  setInstanceSetting,
 } from "./instances.js";
+import { getSetting, getSettings, setSetting } from "./settings.js";
+import { checkModUpdates, removeMod, setModEnabled } from "./modrinth.js";
+import { getOptions, getWorld, listWorlds, setOption } from "./worlds.js";
+import { importModpack } from "./modpack.js";
 import { listVersions, LOADER_UIDS } from "./meta.js";
 import { installMod, listMods, searchMods } from "./modrinth.js";
 import {
@@ -100,6 +106,44 @@ server.registerTool(
   async () => text(listGroups(cfg)),
 );
 
+server.registerTool(
+  "clone_instance",
+  {
+    description: "Clone an instance directory under a new name (full copy, including worlds).",
+    inputSchema: { id: z.string(), newName: z.string() },
+  },
+  async ({ id, newName }) => text(cloneInstance(cfg, id, newName)),
+);
+
+server.registerTool(
+  "set_instance_setting",
+  {
+    description: "Set one key in an instance's instance.cfg [General] section. Backed up and audit-logged.",
+    inputSchema: { id: z.string(), key: z.string(), value: z.string() },
+  },
+  async ({ id, key, value }) => text(setInstanceSetting(cfg, id, key, value)),
+);
+
+// ---- global settings (prismlauncher.cfg) ----
+server.registerTool(
+  "get_settings",
+  {
+    description: "Read global Prism settings (prismlauncher.cfg), one section at a time.",
+    inputSchema: { section: z.string().optional() },
+  },
+  async ({ section }) => text(getSettings(cfg, section ?? "General")),
+);
+
+server.registerTool(
+  "set_setting",
+  {
+    description:
+      "Set one global Prism setting in prismlauncher.cfg. Backed up and audit-logged; reports requiresPrismRestart when Prism is currently running.",
+    inputSchema: { key: z.string(), value: z.string(), section: z.string().optional() },
+  },
+  async ({ key, value, section }) => text(await setSetting(cfg, key, value, section ?? "General")),
+);
+
 // ---- mods (Modrinth) ----
 server.registerTool(
   "search_mods",
@@ -139,6 +183,83 @@ server.registerTool(
     inputSchema: { instance: z.string() },
   },
   async ({ instance }) => text(listMods(cfg, instance)),
+);
+
+server.registerTool(
+  "remove_mod",
+  {
+    description:
+      "Remove a mod jar from an instance (its packwiz index entry is removed too). Destructive: requires confirm: true. The jar is backed up first.",
+    inputSchema: { instance: z.string(), file: z.string(), confirm: z.boolean().optional() },
+  },
+  async ({ instance, file, confirm }) => text(removeMod(cfg, instance, file, confirm)),
+);
+
+server.registerTool(
+  "set_mod_enabled",
+  {
+    description: "Enable/disable a mod by renaming the jar to/from the .disabled extension Prism uses.",
+    inputSchema: { instance: z.string(), file: z.string(), enabled: z.boolean() },
+  },
+  async ({ instance, file, enabled }) => text(setModEnabled(cfg, instance, file, enabled)),
+);
+
+server.registerTool(
+  "check_mod_updates",
+  {
+    description:
+      "Check an instance's mod jars against Modrinth by sha1: reports current vs latest matching version per file (files unknown to Modrinth are marked known:false).",
+    inputSchema: { instance: z.string() },
+  },
+  async ({ instance }) => text(await checkModUpdates(cfg, instance)),
+);
+
+// ---- worlds & options ----
+server.registerTool(
+  "list_worlds",
+  {
+    description: "List single-player worlds (saves/) with level.dat info: name, version, game mode, seed, last played.",
+    inputSchema: { instance: z.string() },
+  },
+  async ({ instance }) => text(await listWorlds(cfg, instance)),
+);
+
+server.registerTool(
+  "get_world",
+  {
+    description: "Get one world's level.dat info by folder name.",
+    inputSchema: { instance: z.string(), world: z.string() },
+  },
+  async ({ instance, world }) => text(await getWorld(cfg, instance, world)),
+);
+
+server.registerTool(
+  "get_options",
+  {
+    description: "Read the instance's minecraft/options.txt as key:value pairs.",
+    inputSchema: { instance: z.string() },
+  },
+  async ({ instance }) => text(getOptions(cfg, instance)),
+);
+
+server.registerTool(
+  "set_option",
+  {
+    description: "Set one key in the instance's options.txt. Backed up and audit-logged.",
+    inputSchema: { instance: z.string(), key: z.string(), value: z.string() },
+  },
+  async ({ instance, key, value }) => text(setOption(cfg, instance, key, value)),
+);
+
+// ---- modpacks ----
+server.registerTool(
+  "import_modpack",
+  {
+    description:
+      "Import a Modrinth .mrpack file: creates the instance from the pack's declared Minecraft/loader versions, downloads every client file with sha1 verification, and extracts overrides.",
+    inputSchema: { path: z.string(), name: z.string().optional() },
+  },
+  async ({ path: p, name }) => text(await importModpack(cfg, p, name)),
 );
 
 // ---- game ----

@@ -4,7 +4,9 @@
   "description": "MCP server for Prism Launcher: file-level instance/mod/world management (Layer 1 of the prism project)",
   "type": "module",
   "license": "MIT",
-  "bin": { "prism-mcp": "dist/index.js" },
+  "bin": {
+    "prism-mcp": "dist/index.js"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
@@ -12,11 +14,16 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.0",
-    "zod": "^3.25.0"
+    "zod": "^3.25.0",
+    "prismarine-nbt": "^2.7.0",
+    "adm-zip": "^0.5.16"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "typescript": "^5.8.0"
+    "typescript": "^5.8.0",
+    "@types/adm-zip": "^0.5.7"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }

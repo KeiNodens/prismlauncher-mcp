@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { instanceDir, instancesDir, type PrismConfig } from "./config.js";
-import { parseIni, stringifyIni, iniGet } from "./ini.js";
+import { parseIni, stringifyIni, iniGet, iniSet } from "./ini.js";
 import { fetchIndex, resolveLwjgl, resolveLoaderVersion, LOADER_UIDS } from "./meta.js";
 import { audit, backupFiles, requireConfirm, requireWritable } from "./safety.js";
 
@@ -192,4 +192,37 @@ export function deleteInstance(cfg: PrismConfig, id: string, confirm?: boolean) 
   fs.rmSync(dir, { recursive: true, force: true });
   audit(cfg, "delete_instance", id, {});
   return { deleted: id };
+}
+
+export function cloneInstance(cfg: PrismConfig, id: string, newName: string) {
+  requireWritable(cfg);
+  const src = instanceDir(cfg.dataDir, id);
+  if (!fs.existsSync(src)) throw new Error(`instance not found: ${id}`);
+  const newId = newName.replace(/[\\/:*?"<>|]/g, "_").trim();
+  if (!newId) throw new Error("new name is empty after sanitizing");
+  const dest = instanceDir(cfg.dataDir, newId);
+  if (fs.existsSync(dest)) throw new Error(`instance already exists: ${newId}`);
+  fs.cpSync(src, dest, { recursive: true });
+  // Point the copy at its new name.
+  const cfgPath = path.join(dest, "instance.cfg");
+  if (fs.existsSync(cfgPath)) {
+    const ini = parseIni(fs.readFileSync(cfgPath, "utf8"));
+    iniSet(ini, "General", "name", newName);
+    iniSet(ini, "General", "lastLaunchTime", "0");
+    fs.writeFileSync(cfgPath, stringifyIni(ini), "utf8");
+  }
+  audit(cfg, "clone_instance", newId, { from: id });
+  return { id: newId, dir: dest, clonedFrom: id };
+}
+
+export function setInstanceSetting(cfg: PrismConfig, id: string, key: string, value: string) {
+  requireWritable(cfg);
+  const cfgPath = path.join(instanceDir(cfg.dataDir, id), "instance.cfg");
+  if (!fs.existsSync(cfgPath)) throw new Error(`instance not found: ${id}`);
+  backupFiles(cfg, [cfgPath]);
+  const ini = parseIni(fs.readFileSync(cfgPath, "utf8"));
+  iniSet(ini, "General", key, value);
+  fs.writeFileSync(cfgPath, stringifyIni(ini), "utf8");
+  audit(cfg, "set_instance_setting", id, { key, value });
+  return { id, key, value };
 }
