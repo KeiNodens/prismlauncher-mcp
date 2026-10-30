@@ -14,7 +14,7 @@ import {
   setInstanceSetting,
 } from "./instances.js";
 import { getSetting, getSettings, setSetting } from "./settings.js";
-import { checkModUpdates, removeMod, setModEnabled } from "./modrinth.js";
+import { checkModUpdates, removeMod, setModEnabled, updateMod } from "./modrinth.js";
 import { getOptions, getWorld, listWorlds, setOption } from "./worlds.js";
 import { importModpack } from "./modpack.js";
 import { listVersions, LOADER_UIDS } from "./meta.js";
@@ -212,6 +212,16 @@ server.registerTool(
     inputSchema: { instance: z.string() },
   },
   async ({ instance }) => text(await checkModUpdates(cfg, instance)),
+);
+
+server.registerTool(
+  "update_mod",
+  {
+    description:
+      "Update one mod jar to the latest Modrinth version matching the instance (the old jar is backed up before removal). Fails clearly when the file is unknown to Modrinth.",
+    inputSchema: { instance: z.string(), file: z.string() },
+  },
+  async ({ instance, file }) => text(await updateMod(cfg, instance, file)),
 );
 
 // ---- worlds & options ----

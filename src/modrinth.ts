@@ -295,15 +295,21 @@ export async function checkModUpdates(cfg: PrismConfig, instanceId: string) {
       continue;
     }
     const versions = await listProjectVersions(current.project_id);
-    const newer = versions
-      .filter(
-        (v) =>
-          (!inst.mcVersion || v.game_versions.includes(inst.mcVersion)) &&
-          (!inst.loader || v.loaders.includes(inst.loader)) &&
-          new Date(v.date_published ?? 0).getTime() > 0,
-      )
-      .sort((a, b) => (b.date_published ?? "").localeCompare(a.date_published ?? ""));
-    const latest = newer[0];
+    const matching = versions.filter(
+      (v) =>
+        (!inst.mcVersion || v.game_versions.includes(inst.mcVersion)) &&
+        (!inst.loader || v.loaders.includes(inst.loader)),
+    );
+    // Same rule as install/update: prefer the newest RELEASE build; a newer
+    // beta must never be silently reported as "the update". Surface it
+    // separately as newerPrerelease so the caller decides knowingly.
+    let latest: MrVersion | undefined;
+    try {
+      latest = pickVersion(matching, inst.mcVersion, inst.loader);
+    } catch {
+      latest = undefined;
+    }
+    const newestOverall = matching[0];
     report.push({
       file: jar,
       known: true,
@@ -311,7 +317,56 @@ export async function checkModUpdates(cfg: PrismConfig, instanceId: string) {
       currentVersion: current.version_number,
       latestVersion: latest?.version_number,
       updateAvailable: !!latest && latest.id !== current.id,
+      newerPrerelease:
+        newestOverall && latest && newestOverall.id !== latest.id && newestOverall.id !== current.id
+          ? newestOverall.version_number
+          : undefined,
     });
   }
   return report;
+}
+
+export async function updateMod(cfg: PrismConfig, instanceId: string, file: string) {
+  requireWritable(cfg);
+  const dir = modsDir(cfg, instanceId);
+  const p = resolveModFile(cfg, instanceId, file.replace(/\.disabled$/, ""));
+  const hash = sha1(fs.readFileSync(p));
+  const res = await fetch(`${API}/version_files`, {
+    method: "POST",
+    headers: { "User-Agent": UA, "Content-Type": "application/json" },
+    body: JSON.stringify({ hashes: [hash], algorithm: "sha1" }),
+  });
+  if (!res.ok) throw new Error(`Modrinth version_files -> HTTP ${res.status}`);
+  const byHash = (await res.json()) as Record<string, VersionFileHit>;
+  const current = byHash[hash];
+  if (!current) throw new Error(`${file} is not a known Modrinth file; cannot update`);
+  const { getInstance } = await import("./instances.js");
+  const inst = getInstance(cfg, instanceId);
+  const versions = await listProjectVersions(current.project_id);
+  const latest = pickVersion(versions, inst.mcVersion, inst.loader);
+  if (latest.id === current.id) {
+    return { file, updated: false, version: current.version_number };
+  }
+  // Install the new version first, then remove the old jar (backed up).
+  const result = await installOne(
+    cfg,
+    instanceDir(cfg.dataDir, instanceId),
+    "mod",
+    current.project_id,
+    inst.mcVersion,
+    inst.loader,
+    latest.id,
+  );
+  if (result.file !== path.basename(p)) {
+    backupFiles(cfg, [p]);
+    fs.rmSync(p);
+  }
+  audit(cfg, "update_mod", instanceId, { file, from: current.version_number, to: latest.version_number });
+  return {
+    file,
+    updated: true,
+    fromVersion: current.version_number,
+    toVersion: latest.version_number,
+    newFile: result.file,
+  };
 }
