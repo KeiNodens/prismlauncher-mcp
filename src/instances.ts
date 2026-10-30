@@ -152,7 +152,9 @@ export async function createInstance(cfg: PrismConfig, args: CreateInstanceArgs)
 }
 
 export function listGroups(cfg: PrismConfig): string[] {
-  const p = path.join(cfg.dataDir, "instgroups.json");
+  // Prism stores instgroups.json inside instances/ (older layouts: data root).
+  const inInstances = path.join(instancesDir(cfg.dataDir), "instgroups.json");
+  const p = fs.existsSync(inInstances) ? inInstances : path.join(cfg.dataDir, "instgroups.json");
   if (!fs.existsSync(p)) return [];
   try {
     const data = JSON.parse(fs.readFileSync(p, "utf8"));
@@ -163,7 +165,8 @@ export function listGroups(cfg: PrismConfig): string[] {
 }
 
 export function setInstanceGroup(cfg: PrismConfig, id: string, group: string): void {
-  const p = path.join(cfg.dataDir, "instgroups.json");
+  const inInstances = path.join(instancesDir(cfg.dataDir), "instgroups.json");
+  const p = fs.existsSync(inInstances) ? inInstances : inInstances;
   let data: { formatVersion: number; groups: Record<string, { hidden?: boolean; instances?: string[] }> } =
     { formatVersion: 1, groups: {} };
   if (fs.existsSync(p)) {
