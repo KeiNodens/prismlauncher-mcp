@@ -18,6 +18,7 @@ import { checkModUpdates, removeMod, setModEnabled, updateMod } from "./modrinth
 import { getOptions, getWorld, listWorlds, setOption } from "./worlds.js";
 import { importModpack } from "./modpack.js";
 import { buildLangPack, checkLangConsistency, extractLang } from "./lang.js";
+import { installModCf, loadBlocked, resolveBlockedMods, searchModsCf } from "./curseforge.js";
 import { listVersions, LOADER_UIDS } from "./meta.js";
 import { installMod, listMods, searchMods } from "./modrinth.js";
 import {
@@ -32,7 +33,7 @@ import {
 
 const cfg = loadConfig(process.argv.slice(2));
 
-const server = new McpServer({ name: "prism-mcp", version: "0.2.0" });
+const server = new McpServer({ name: "prism-mcp", version: "0.3.0" });
 
 function text(value: unknown) {
   return {
@@ -387,6 +388,51 @@ server.registerTool(
     },
   },
   async (args) => text(buildLangPack(cfg, args)),
+);
+
+
+// ---- CurseForge ----
+server.registerTool(
+  "search_mods_cf",
+  {
+    description: "Search CurseForge for Minecraft mods (uses the user's own API key from Prism's FlameKeyOverride setting).",
+    inputSchema: {
+      query: z.string(),
+      gameVersion: z.string().optional(),
+      loader: z.string().optional(),
+      pageSize: z.number().optional(),
+    },
+  },
+  async (args) => text(await searchModsCf(cfg, args)),
+);
+
+server.registerTool(
+  "install_mod_cf",
+  {
+    description:
+      "Install a mod from CurseForge into an instance (latest release matching the instance's MC version/loader unless fileId is given; required dependencies are installed recursively). If the author disabled third-party distribution, the file comes back in `blocked` with its mod-page URL: ask the user to download it manually, then call resolve_blocked_mods. Never scrape CurseForge pages or use unofficial mirrors.",
+    inputSchema: { instanceId: z.string(), modId: z.number(), fileId: z.number().optional() },
+  },
+  async ({ instanceId, ...args }) => text(await installModCf(cfg, instanceId, args)),
+);
+
+server.registerTool(
+  "list_blocked_mods",
+  {
+    description: "List CurseForge files for an instance that are waiting for the user to download them manually.",
+    inputSchema: { instanceId: z.string() },
+  },
+  async ({ instanceId }) => text(loadBlocked(cfg, instanceId)),
+);
+
+server.registerTool(
+  "resolve_blocked_mods",
+  {
+    description:
+      "Scan a folder for user-downloaded jars, sha1-match them against the instance's pending blocked CurseForge files, and place matches into the instance's mods folder.",
+    inputSchema: { instanceId: z.string(), folder: z.string() },
+  },
+  async ({ instanceId, folder }) => text(await resolveBlockedMods(cfg, instanceId, folder)),
 );
 
 await bootstrapNas();

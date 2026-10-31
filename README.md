@@ -79,6 +79,13 @@ install location (`%LOCALAPPDATA%\Programs\PrismLauncher`) or on `PATH`.
 installed recursively and reported; optional ones are only reported),
 `list_mods`, `remove_mod`, `set_mod_enabled`, `check_mod_updates`, `update_mod`
 
+**CurseForge:** `search_mods_cf`, `install_mod_cf` (required dependencies
+recursively; files whose authors disabled third-party distribution come back
+as `blocked` with a mod-page URL for manual download — no scraping, ever),
+`list_blocked_mods`, `resolve_blocked_mods` (sha1-matched placement of
+user-downloaded files). Uses the user's own API key from Prism's
+`FlameKeyOverride` setting.
+
 **Modpacks:** `import_modpack` (.mrpack: instance creation from the pack's
 declared dependencies, sha1-verified downloads, overrides extraction)
 

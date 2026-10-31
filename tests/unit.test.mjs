@@ -63,3 +63,24 @@ test("parseLangProps reads legacy .lang files", () => {
   assert.equal(out["item.demo.name"], "Demo");
   assert.equal(out["foo"], "bar=baz");
 });
+
+import { selectCfFile, fileMatches, isBlocked, fileSha1 } from "../dist/curseforge.js";
+
+const CF_FILES = [
+  { id: 101, modId: 1, fileName: "a-beta.jar", releaseType: 2, fileDate: "2026-02-01", gameVersions: ["1.20.1", "Forge"], downloadUrl: "https://x", isAvailable: true, hashes: [{ algo: 1, value: "AA" }], dependencies: [] },
+  { id: 100, modId: 1, fileName: "a-release.jar", releaseType: 1, fileDate: "2026-01-01", gameVersions: ["1.20.1", "Forge"], downloadUrl: "https://x", isAvailable: true, hashes: [], dependencies: [] },
+  { id: 102, modId: 1, fileName: "a-fabric.jar", releaseType: 1, fileDate: "2026-03-01", gameVersions: ["1.20.1", "Fabric"], downloadUrl: null, isAvailable: false, hashes: [], dependencies: [] },
+  { id: 99, modId: 1, fileName: "a-old.jar", releaseType: 1, fileDate: "2025-01-01", gameVersions: ["1.19.2", "Forge"], downloadUrl: "https://x", isAvailable: true, hashes: [], dependencies: [] },
+];
+
+test("selectCfFile prefers release over newer beta for the same mc+loader", () => {
+  assert.equal(selectCfFile(CF_FILES, "1.20.1", "forge").fileName, "a-release.jar");
+});
+
+test("fileMatches / isBlocked / fileSha1 basics", () => {
+  assert.equal(fileMatches(CF_FILES[2], "1.20.1", "FABRIC"), true);
+  assert.equal(fileMatches(CF_FILES[3], "1.20.1", "forge"), false);
+  assert.equal(isBlocked(CF_FILES[2]), true);
+  assert.equal(isBlocked(CF_FILES[0]), false);
+  assert.equal(fileSha1(CF_FILES[0]), "aa");
+});
