@@ -5,15 +5,23 @@
 This document is written for AI agents that will call this MCP server. It
 states the operating contract precisely: how to connect, which rules to
 follow, and what every tool does. The schemas below were generated from the
-running server (v0.5.0, 44 tools).
+running server (v0.6.0, 45 tools).
 
 ## What this server is
 
 - A stdio MCP server that operates one Prism Launcher data directory at the
   file level (instances, mods, worlds, options, servers.dat) and delegates
   launching to Prism itself.
-- It does not control a running Prism GUI, does not manage accounts, and
-  never touches anything outside its data directory.
+- It does not manage accounts and never touches anything outside its data
+  directory.
+- **Bridge preference (v0.6.0):** when a bridge-enabled Prism (a Prism build
+  with the agent bridge, or PrismLauncher-Agent headless) is running for the
+  same data directory, `create_instance`, `launch_instance`, `stop_instance`,
+  and `set_setting` are routed through the live app instead of files, and
+  the results carry `viaBridge: true`. Routing is automatic, falls back to
+  the file-level implementation on any failure, and can be disabled with
+  the `PRISM_BRIDGE=0` environment variable. Check availability with
+  `bridge_status`.
 
 ## Connecting
 
@@ -170,6 +178,8 @@ running server (v0.5.0, 44 tools).
 
 ### Game
 
+- **bridge_status** — Check whether a bridge-enabled Prism (GUI or PrismLauncher-Agent headless) is running for this data dir. When available, launch/stop/create/set_setting route through the live app.
+  Parameters: none
 - **launch_instance** — Launch an instance through Prism (--launch). Prism/game start asynchronously.
   Parameters: `id` (string, required), `world` (string), `server` (string), `profile` (string), `offline` (string)
 - **get_instance_status** — Running state (javaw command-line match), log presence and last log lines.

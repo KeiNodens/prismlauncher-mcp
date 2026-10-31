@@ -117,10 +117,13 @@ AIエージェント向け: [docs/agent-guide.ja.md](docs/agent-guide.ja.md)（�
 
 ## ステータス
 
-v0.5.0 — Phase 1（ファイルレベル操作）は実装・検証済みです。一気通貫デモ
+v0.6.0 — Phase 1（ファイルレベル操作）は実装・検証済みです。一気通貫デモ
 （インスタンス作成 → mod 導入 → 起動 → タイトル画面のスクリーンショット確認）、
 Modrinth / CurseForge の依存解決つき導入、更新チェック、Modpack 取り込み
-（.mrpack / CurseForge 形式）、翻訳支援ツールまでを含みます。再現可能な
+（.mrpack / CurseForge 形式）、翻訳支援ツールまでを含みます。v0.6.0 では
+Phase 2 のブリッジ接続が加わり、ブリッジ有効な Prism が起動中のデータフォルダでは
+作成/起動/停止/設定書き込みが起動中のアプリ経由になります（`bridge_status` 参照）。
+再現可能な
 スモークテストが `scripts/smoke.mjs` にあります。
 
 ## ライセンス

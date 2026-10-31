@@ -4,15 +4,20 @@
 
 この文書は、この MCP サーバを呼び出す AI エージェントに向けて書かれています。
 接続方法、守るべき運用ルール、全ツールの仕様を正確に記します。以下のスキーマは
-稼働中サーバ（v0.5.0、全44ツール）から生成したものです。
+稼働中サーバ（v0.6.0、全45ツール）から生成したものです。
 
 ## このサーバについて
 
 - Prism Launcher のデータフォルダ1つをファイルレベルで操作する stdio MCP サーバ
   です（インスタンス、mod、ワールド、options、servers.dat）。起動は Prism 本体に
   委譲します。
-- 起動中の Prism GUI の制御、アカウント管理は行いません。データフォルダの外には
-  一切触れません。
+- アカウント管理は行いません。データフォルダの外には一切触れません。
+- **ブリッジ優先（v0.6.0）:** 同じデータフォルダでブリッジ有効な Prism（エージェント
+  ブリッジ入りビルド、または PrismLauncher-Agent ヘッドレス）が起動中の場合、
+  `create_instance` / `launch_instance` / `stop_instance` / `set_setting` は
+  ファイルではなく起動中のアプリ経由で実行され、結果に `viaBridge: true` が付きます。
+  ルーティングは自動で、失敗時はファイルレベル実装にフォールバックします。
+  環境変数 `PRISM_BRIDGE=0` で無効化できます。可用性は `bridge_status` で確認できます。
 
 ## 接続
 
@@ -163,6 +168,8 @@
 
 ### ゲーム
 
+- **bridge_status** — このデータフォルダでブリッジ有効な Prism（GUI または PrismLauncher-Agent ヘッドレス）が起動中かを確認します。利用可能な場合、起動/停止/作成/設定書き込みは起動中のアプリ経由になります。
+  パラメータ: なし
 - **launch_instance** — Prism経由で起動
   引数: `id` (string, required), `world` (string), `server` (string), `profile` (string), `offline` (string)
 - **get_instance_status** — 起動状態の確認

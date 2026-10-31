@@ -119,11 +119,14 @@ For AI agents: [docs/agent-guide.md](docs/agent-guide.md) (operating rules, work
 
 ## Status
 
-v0.5.0 — Phase 1 (file-level operation) is implemented and verified,
+v0.6.0 — Phase 1 (file-level operation) is implemented and verified,
 including the end-to-end demo (create instance → install mod → launch →
 title-screen screenshot), dependency-aware installs from Modrinth and
 CurseForge, update checks, modpack import (.mrpack and CurseForge zip),
-servers.dat editing and the translation support tools. A repeatable smoke
+servers.dat editing and the translation support tools. v0.6.0 adds the
+Phase 2 bridge transport: when a bridge-enabled Prism is running for the
+data directory, create/launch/stop/set_setting route through the live app
+(see `bridge_status`). A repeatable smoke
 test lives in `scripts/smoke.mjs`.
 
 ## License

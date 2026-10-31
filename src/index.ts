@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { loadConfig, migrateStateDir } from "./config.js";
+import { bridgeStatus, tryBridge } from "./bridge.js";
 import { bootstrapNas } from "./nas.js";
 import {
   cloneInstance,
@@ -35,7 +36,7 @@ import {
 const cfg = loadConfig(process.argv.slice(2));
 migrateStateDir(cfg.dataDir);
 
-const server = new McpServer({ name: "prismlauncher-mcp", version: "0.5.0" });
+const server = new McpServer({ name: "prismlauncher-mcp", version: "0.6.0" });
 
 function text(value: unknown) {
   return {
@@ -92,7 +93,48 @@ server.registerTool(
       group: z.string().optional(),
     },
   },
-  async (args) => text(await createInstance(cfg, args)),
+  async (args) => {
+    // Prefer the agent bridge when a bridge-enabled Prism is running: the
+    // real creation task resolves metadata properly. The bridge requires an
+    // explicit loaderVersion, so unresolved cases keep the file-level path.
+    const aliasLoaders = ["forge", "neoforge", "fabric", "quilt"];
+    const routable =
+      (!args.loader || aliasLoaders.includes(args.loader)) && (!args.loader || !!args.loaderVersion);
+    if (routable && !cfg.readOnly) {
+      const created = await tryBridge<{ taskId: string }>(cfg, "instance.create", {
+        name: args.name,
+        version: args.mcVersion,
+        loader: args.loader,
+        loaderVersion: args.loaderVersion,
+        icon: args.iconKey,
+        group: args.group,
+      });
+      if (created?.taskId) {
+        // Creation runs as a bridge task; poll until it settles.
+        const deadline = Date.now() + 180000;
+        let state = "working";
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 1500));
+          const tasks = await tryBridge<{ id: string; state: string; failReason?: string }[]>(cfg, "task.list", {});
+          const mine = tasks?.find((t) => t.id === created.taskId);
+          if (!mine) break;
+          state = mine.state;
+          if (state === "succeeded") {
+            try {
+              return text({ ...getInstance(cfg, args.name), viaBridge: true, taskId: created.taskId });
+            } catch {
+              return text({ created: args.name, viaBridge: true, taskId: created.taskId, state });
+            }
+          }
+          if (state === "failed" || state === "aborted") {
+            throw new Error(`bridge instance creation ${state}: ${mine.failReason ?? "unknown"}`);
+          }
+        }
+        return text({ created: args.name, viaBridge: true, taskId: created.taskId, state, note: "creation still running in Prism; check list_instances shortly" });
+      }
+    }
+    return text(await createInstance(cfg, args));
+  },
 );
 
 server.registerTool(
@@ -145,7 +187,23 @@ server.registerTool(
       "Set one global Prism setting in prismlauncher.cfg. Backed up and audit-logged; reports requiresPrismRestart when Prism is currently running.",
     inputSchema: { key: z.string(), value: z.string(), section: z.string().optional() },
   },
-  async ({ key, value, section }) => text(await setSetting(cfg, key, value, section ?? "General")),
+  async ({ key, value, section }) => {
+    // When a bridge-enabled Prism is running, write through the app: a
+    // file-level write would be overwritten when the app saves on exit.
+    // Prism's settings object only stores registered keys, so verify the
+    // write landed; unregistered keys fall back to the file-level write.
+    if ((section ?? "General") === "General" && !cfg.readOnly) {
+      const via = await tryBridge<{ key: string; value: unknown }>(cfg, "settings.set", { key, value });
+      if (via) {
+        const check = await tryBridge<{ key: string; value: unknown }>(cfg, "settings.get", { key });
+        if (check && String(check.value ?? "") === value) {
+          return text({ key, value: check.value, section: "General", viaBridge: true, requiresPrismRestart: false });
+        }
+        console.error(`[prismlauncher-mcp] bridge settings.set did not stick for ${key} (unregistered key?), falling back to file write`);
+      }
+    }
+    return text(await setSetting(cfg, key, value, section ?? "General"));
+  },
 );
 
 // ---- mods (Modrinth) ----
@@ -276,6 +334,16 @@ server.registerTool(
   async ({ path: p, name }) => text(await importModpack(cfg, p, name)),
 );
 
+// ---- agent bridge (Phase 2) ----
+server.registerTool(
+  "bridge_status",
+  {
+    description:
+      "Check whether a bridge-enabled Prism (GUI or PrismLauncher-Agent headless) is running for this data dir. When available, launch/stop/create/set_setting route through the live app.",
+  },
+  async () => text(await bridgeStatus(cfg)),
+);
+
 // ---- game ----
 server.registerTool(
   "launch_instance",
@@ -289,7 +357,15 @@ server.registerTool(
       offline: z.string().optional(),
     },
   },
-  async ({ id, ...opts }) => text(launchInstance(cfg, id, opts)),
+  async ({ id, ...opts }) => {
+    // Route plain launches through a running bridge-enabled Prism so the
+    // game is owned by that process instead of spawning a second launcher.
+    if (!opts.world && !opts.profile && !opts.offline && !cfg.readOnly) {
+      const via = await tryBridge(cfg, "launch", { id, server: opts.server });
+      if (via) return text({ launched: id, viaBridge: true, bridge: via, note: "launched by the running Prism; poll get_instance_status / wait_for_event" });
+    }
+    return text(launchInstance(cfg, id, opts));
+  },
 );
 
 server.registerTool(
@@ -326,7 +402,13 @@ server.registerTool(
       "Kill the javaw process whose command line matches this instance exactly. Destructive: requires confirm: true.",
     inputSchema: { id: z.string(), confirm: z.boolean().optional() },
   },
-  async ({ id, confirm }) => text(await stopInstance(cfg, id, confirm)),
+  async ({ id, confirm }) => {
+    if (confirm === true && !cfg.readOnly) {
+      const via = await tryBridge<{ id: string; stopped: boolean }>(cfg, "launch.stop", { id });
+      if (via) return text({ ...via, viaBridge: true });
+    }
+    return text(await stopInstance(cfg, id, confirm));
+  },
 );
 
 server.registerTool(
