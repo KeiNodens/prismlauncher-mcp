@@ -18,7 +18,7 @@ import { checkModUpdates, listModVersions, removeMod, setModEnabled, updateMod }
 import { getOptions, getWorld, listWorlds, setOption } from "./worlds.js";
 import { importModpack } from "./modpack.js";
 import { buildLangPack, checkLangConsistency, extractLang } from "./lang.js";
-import { importModpackCf, installModCf, listModFilesCf, loadBlocked, resolveBlockedMods, searchModsCf } from "./curseforge.js";
+import { checkModUpdatesCf, importModpackCf, installModCf, listModFilesCf, loadBlocked, resolveBlockedMods, searchModsCf, updateModCf } from "./curseforge.js";
 import { listVersions, LOADER_UIDS } from "./meta.js";
 import { installMod, listMods, searchMods } from "./modrinth.js";
 import {
@@ -33,7 +33,7 @@ import {
 
 const cfg = loadConfig(process.argv.slice(2));
 
-const server = new McpServer({ name: "prism-mcp", version: "0.4.0" });
+const server = new McpServer({ name: "prism-mcp", version: "0.4.1" });
 
 function text(value: unknown) {
   return {
@@ -443,6 +443,26 @@ server.registerTool(
     inputSchema: { instanceId: z.string() },
   },
   async ({ instanceId }) => text(loadBlocked(cfg, instanceId)),
+);
+
+server.registerTool(
+  "check_mod_updates_cf",
+  {
+    description:
+      "Check CurseForge-installed mods (those with a [update.curseforge] index entry) for a newer release matching the instance. Read-only.",
+    inputSchema: { instanceId: z.string() },
+  },
+  async ({ instanceId }) => text(await checkModUpdatesCf(cfg, instanceId)),
+);
+
+server.registerTool(
+  "update_mod_cf",
+  {
+    description:
+      "Update one CurseForge-installed mod (by index slug or project id) to the latest release matching the instance; the old jar is backed up and removed.",
+    inputSchema: { instanceId: z.string(), mod: z.string() },
+  },
+  async ({ instanceId, mod }) => text(await updateModCf(cfg, instanceId, mod)),
 );
 
 server.registerTool(

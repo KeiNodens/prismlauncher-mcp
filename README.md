@@ -89,7 +89,7 @@ file id to `install_mod_cf` to pin or roll back), `install_mod_cf` (required dep
 recursively; files whose authors disabled third-party distribution come back
 as `blocked` with a mod-page URL for manual download — no scraping, ever),
 `list_blocked_mods`, `resolve_blocked_mods` (sha1-matched placement of
-user-downloaded files). Uses the user's own API key from Prism's
+user-downloaded files), `check_mod_updates_cf`, `update_mod_cf`. Uses the user's own API key from Prism's
 `FlameKeyOverride` setting.
 
 **Modpacks:** `import_modpack` (.mrpack: instance creation from the pack's

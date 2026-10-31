@@ -667,3 +667,95 @@ export async function importModpackCf(cfg: PrismConfig, zipPath: string, nameOve
     ...(out.incompatibleWarnings.length ? { incompatibleWarnings: out.incompatibleWarnings } : {}),
   };
 }
+
+// ---- update check / update for CF-installed mods ----
+
+export interface CfIndexEntry {
+  slug: string;
+  fileName: string;
+  fileId: number;
+  projectId: number;
+}
+
+export function parseCfIndex(text: string, slug: string): CfIndexEntry | undefined {
+  const section = /\[update\.curseforge\]([\s\S]*)$/.exec(text);
+  if (!section) return undefined;
+  const fileId = /file-id\s*=\s*(\d+)/.exec(section[1]);
+  const projectId = /project-id\s*=\s*(\d+)/.exec(section[1]);
+  const fileName = /^filename\s*=\s*"([^"]+)"/m.exec(text);
+  if (!fileId || !projectId || !fileName) return undefined;
+  return { slug, fileName: fileName[1], fileId: Number(fileId[1]), projectId: Number(projectId[1]) };
+}
+
+export function readCfIndexEntries(modsDir: string): CfIndexEntry[] {
+  const indexDir = path.join(modsDir, ".index");
+  if (!fs.existsSync(indexDir)) return [];
+  const out: CfIndexEntry[] = [];
+  for (const name of fs.readdirSync(indexDir)) {
+    if (!name.endsWith(".pw.toml")) continue;
+    const entry = parseCfIndex(fs.readFileSync(path.join(indexDir, name), "utf8"), name.replace(/\.pw\.toml$/, ""));
+    if (entry) out.push(entry);
+  }
+  return out;
+}
+
+export async function checkModUpdatesCf(cfg: PrismConfig, instanceId: string) {
+  const modsDir = path.join(instanceDir(cfg.dataDir, instanceId), "minecraft", "mods");
+  const entries = readCfIndexEntries(modsDir);
+  const { getInstance } = await import("./instances.js");
+  const inst = getInstance(cfg, instanceId);
+  const updates: unknown[] = [];
+  let upToDate = 0;
+  for (const entry of entries) {
+    const files = await fetchFilesFiltered(cfg, entry.projectId, inst.mcVersion, inst.loader);
+    const picked = selectCfFile(files, inst.mcVersion, inst.loader);
+    if (!picked) {
+      updates.push({ slug: entry.slug, projectId: entry.projectId, problem: "no file matches this instance anymore" });
+      continue;
+    }
+    if (picked.id === entry.fileId) {
+      upToDate++;
+      continue;
+    }
+    let modName = entry.slug;
+    try {
+      modName = (await cfFetch<CfMod>(cfg, `/mods/${entry.projectId}`)).name;
+    } catch {
+      /* keep slug */
+    }
+    updates.push({
+      slug: entry.slug,
+      projectId: entry.projectId,
+      mod: modName,
+      currentFileId: entry.fileId,
+      currentFile: entry.fileName,
+      latestFileId: picked.id,
+      latestFile: picked.fileName,
+      latestType: cfReleaseLabel(picked.releaseType),
+      blocked: isBlocked(picked),
+    });
+  }
+  return { instance: instanceId, checked: entries.length, upToDate, updates };
+}
+
+export async function updateModCf(cfg: PrismConfig, instanceId: string, slugOrProjectId: string) {
+  requireWritable(cfg);
+  const modsDir = path.join(instanceDir(cfg.dataDir, instanceId), "minecraft", "mods");
+  const entries = readCfIndexEntries(modsDir);
+  const entry =
+    entries.find((e) => e.slug === slugOrProjectId) ?? entries.find((e) => String(e.projectId) === slugOrProjectId);
+  if (!entry) throw new Error(`no CurseForge-installed mod matches: ${slugOrProjectId}`);
+  const result = await installModCf(cfg, instanceId, { modId: entry.projectId });
+  const newFile = result.installed.find((i) => i.file !== entry.fileName)?.file ?? result.installed[0]?.file;
+  let removedOld: string | undefined;
+  if (newFile && newFile !== entry.fileName) {
+    const oldPath = path.join(modsDir, entry.fileName);
+    if (fs.existsSync(oldPath)) {
+      backupFiles(cfg, [oldPath]);
+      fs.rmSync(oldPath);
+      removedOld = entry.fileName;
+    }
+  }
+  audit(cfg, "update_mod_cf", instanceId, { slug: entry.slug, from: entry.fileId, removedOld });
+  return { slug: entry.slug, previousFile: entry.fileName, removedOld, ...result };
+}

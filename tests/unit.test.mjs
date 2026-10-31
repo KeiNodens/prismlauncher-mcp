@@ -115,3 +115,11 @@ test("parseCfLoader splits loader id and version", () => {
   assert.deepEqual(parseCfLoader("neoforge-21.1.200"), { loader: "neoforge", version: "21.1.200" });
   assert.deepEqual(parseCfLoader("fabric-0.16.14"), { loader: "fabric", version: "0.16.14" });
 });
+
+import { parseCfIndex } from "../dist/curseforge.js";
+
+test("parseCfIndex reads curseforge update entries", () => {
+  const toml = 'name = "x"\nfilename = "x-1.0.jar"\n\n[update]\n[update.curseforge]\nfile-id = 4605078\nproject-id = 248787\n';
+  assert.deepEqual(parseCfIndex(toml, "x"), { slug: "x", fileName: "x-1.0.jar", fileId: 4605078, projectId: 248787 });
+  assert.equal(parseCfIndex('filename = "y.jar"\n', "y"), undefined);
+});
