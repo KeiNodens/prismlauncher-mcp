@@ -1,5 +1,7 @@
 # prismlauncher-mcp
 
+English | [日本語](README.ja.md)
+
 An MCP (Model Context Protocol) server that lets an AI agent operate
 [Prism Launcher](https://prismlauncher.org/) at the **file level** — create
 instances, install mods from Modrinth, launch the game, read logs and fetch
@@ -104,9 +106,9 @@ required file installed under the same blocked policy, overrides extracted)
 NBT-level edits that preserve unknown fields on existing entries)
 
 **Game:** `launch_instance`, `get_instance_status`, `tail_log`,
+`wait_for_event`, `stop_instance`, `list_screenshots`, `get_screenshot`
 
 **Translation (explicit only):** `extract_lang`, `check_lang_consistency`, `build_lang_pack` — see the Translation support section above.
-`wait_for_event`, `stop_instance`, `list_screenshots`, `get_screenshot`
 
 ## Connecting an MCP client
 
@@ -115,11 +117,12 @@ client configuration.
 
 ## Status
 
-v0.1.0 — Phase 1 implemented and verified at the file level, including the
-demo path (create instance → install mod → files validated), clone/settings,
-mod update checks, world inspection and .mrpack import. The final launch leg
-requires running Prism in a desktop session. A repeatable smoke test lives in
-`scripts/smoke.mjs`.
+v0.5.0 — Phase 1 (file-level operation) is implemented and verified,
+including the end-to-end demo (create instance → install mod → launch →
+title-screen screenshot), dependency-aware installs from Modrinth and
+CurseForge, update checks, modpack import (.mrpack and CurseForge zip),
+servers.dat editing and the translation support tools. A repeatable smoke
+test lives in `scripts/smoke.mjs`.
 
 ## License
 
