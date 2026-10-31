@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 
 const execFileP = promisify(execFile);
 
-// When prism-mcp runs in a session without NAS credentials (e.g. Rin's SSH
+// When prismlauncher-mcp runs in a session without NAS credentials (e.g. Rin's SSH
 // session), the Buffalo NAS share behind the instance symlinks needs an
 // explicit connection first. The credential lives ONLY on the PC, DPAPI
 // (LocalMachine) encrypted in nas-cred.json; tools/nas-mount.ps1 decrypts
@@ -16,7 +16,7 @@ export async function bootstrapNas(): Promise<void> {
   if ((process.env.PRISM_NAS_BOOTSTRAP ?? "").trim() !== "1") return;
   const credFile = process.env.PRISM_NAS_CRED ?? "C:\\dev\\prism\\nas-cred.json";
   if (!fs.existsSync(credFile)) {
-    console.error(`prism-mcp: PRISM_NAS_BOOTSTRAP=1 but no cred file at ${credFile}`);
+    console.error(`prismlauncher-mcp: PRISM_NAS_BOOTSTRAP=1 but no cred file at ${credFile}`);
     return;
   }
   const script =
@@ -28,8 +28,8 @@ export async function bootstrapNas(): Promise<void> {
       ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, credFile],
       { timeout: 30_000 },
     );
-    console.error(`prism-mcp: NAS bootstrap: ${stdout.trim()}`);
+    console.error(`prismlauncher-mcp: NAS bootstrap: ${stdout.trim()}`);
   } catch (e) {
-    console.error(`prism-mcp: NAS bootstrap failed: ${(e as Error).message}`);
+    console.error(`prismlauncher-mcp: NAS bootstrap failed: ${(e as Error).message}`);
   }
 }

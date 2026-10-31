@@ -3,9 +3,9 @@ import path from "node:path";
 import { mcpHome, type PrismConfig } from "./config.js";
 
 // Safety plumbing (PLAN.md §3.3):
-// - every mutation is appended to prism-mcp/agent-ops.jsonl
+// - every mutation is appended to prismlauncher-mcp/agent-ops.jsonl
 // - destructive tools require confirm: true
-// - files about to be overwritten/deleted are copied to prism-mcp/backups/<ts>/
+// - files about to be overwritten/deleted are copied to prismlauncher-mcp/backups/<ts>/
 
 export function audit(cfg: PrismConfig, tool: string, target: string, args: unknown): void {
   const home = mcpHome(cfg.dataDir);

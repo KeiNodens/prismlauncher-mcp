@@ -9,7 +9,7 @@ import { audit, backupFiles, requireConfirm, requireWritable } from "./safety.js
 // Prism UI shows provider/version correctly (PLAN.md §1.3).
 
 const API = "https://api.modrinth.com/v2";
-const UA = "prism-mcp/0.1.0 (https://github.com/PrismLauncher)";
+const UA = "prismlauncher-mcp/0.1.0 (https://github.com/PrismLauncher)";
 
 export type ResourceType = "mod" | "resourcepack" | "shader" | "datapack";
 

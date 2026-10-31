@@ -34,7 +34,19 @@ export function loadConfig(argv: string[]): PrismConfig {
 }
 
 export function mcpHome(dataDir: string): string {
-  return path.join(dataDir, "prism-mcp");
+  return path.join(dataDir, "prismlauncher-mcp");
+}
+
+// One-time rename of the state dir from the pre-0.5.0 name (prism-mcp).
+// Runs at startup: if the old dir exists and the new one does not, move it
+// whole so audit logs, backups, blocked records and lang-work carry over.
+export function migrateStateDir(dataDir: string): void {
+  const oldDir = path.join(dataDir, "prism-mcp");
+  const newDir = mcpHome(dataDir);
+  if (fs.existsSync(oldDir) && !fs.existsSync(newDir)) {
+    fs.renameSync(oldDir, newDir);
+    console.error(`prismlauncher-mcp: migrated state dir prism-mcp -> prismlauncher-mcp`);
+  }
 }
 
 export function instancesDir(dataDir: string): string {

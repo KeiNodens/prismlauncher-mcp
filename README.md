@@ -1,4 +1,4 @@
-# prism-mcp
+# prismlauncher-mcp
 
 An MCP (Model Context Protocol) server that lets an AI agent operate
 [Prism Launcher](https://prismlauncher.org/) at the **file level** — create
@@ -32,7 +32,7 @@ Three tools support translating mod language files. They are never triggered
 automatically by other tools; a client must call them directly.
 
 1. `extract_lang` — pull `assets/<modid>/lang/*` out of a mod jar into
-   `prism-mcp/lang-work/<slug>/source/`.
+   `prismlauncher-mcp/lang-work/<slug>/source/`.
 2. Translate into `lang-work/<slug>/translated/` (same relative paths,
    target-locale file names), then `check_lang_consistency` — reports missing
    and extra keys, placeholder / format-code mismatches and untranslated
@@ -45,8 +45,8 @@ automatically by other tools; a client must call them directly.
 
 - **Destructive tools require `confirm: true`** (`delete_instance`, `stop_instance`).
 - Files that would be overwritten or deleted are first copied to
-  `prism-mcp/backups/<timestamp>/` inside the data dir.
-- **Every mutation is audit-logged** to `prism-mcp/agent-ops.jsonl` in the data dir.
+  `prismlauncher-mcp/backups/<timestamp>/` inside the data dir.
+- **Every mutation is audit-logged** to `prismlauncher-mcp/agent-ops.jsonl` in the data dir.
 - `--read-only` (or `PRISM_MCP_READ_ONLY=1`) disables all mutation tools.
 - The server only ever touches the single data dir it was started with.
 

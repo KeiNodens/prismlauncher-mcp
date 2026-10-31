@@ -74,7 +74,7 @@ export async function importModpack(cfg: PrismConfig, mrpackPath: string, nameOv
     let ok = false;
     for (const url of file.downloads) {
       try {
-        const res = await fetch(url, { headers: { "User-Agent": "prism-mcp/0.1.0" } });
+        const res = await fetch(url, { headers: { "User-Agent": "prismlauncher-mcp/0.1.0" } });
         if (!res.ok) continue;
         const buf = Buffer.from(await res.arrayBuffer());
         if (sha1(buf) !== file.hashes.sha1) continue;

@@ -2,7 +2,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { loadConfig } from "./config.js";
+import { loadConfig, migrateStateDir } from "./config.js";
 import { bootstrapNas } from "./nas.js";
 import {
   cloneInstance,
@@ -33,8 +33,9 @@ import {
 } from "./game.js";
 
 const cfg = loadConfig(process.argv.slice(2));
+migrateStateDir(cfg.dataDir);
 
-const server = new McpServer({ name: "prism-mcp", version: "0.4.2" });
+const server = new McpServer({ name: "prismlauncher-mcp", version: "0.5.0" });
 
 function text(value: unknown) {
   return {
@@ -384,7 +385,7 @@ server.registerTool(
   "extract_lang",
   {
     description:
-      "Extract a mod jar's language files (assets/<modid>/lang/*) into prism-mcp/lang-work/<slug>/source for translation. Explicit use only.",
+      "Extract a mod jar's language files (assets/<modid>/lang/*) into prismlauncher-mcp/lang-work/<slug>/source for translation. Explicit use only.",
     inputSchema: { instanceId: z.string().optional(), modFile: z.string().optional(), jarPath: z.string().optional() },
   },
   async (args) => text(extractLang(cfg, args)),
@@ -404,7 +405,7 @@ server.registerTool(
   "build_lang_pack",
   {
     description:
-      "Build a resource pack zip from prism-mcp/lang-work/<slug>/translated and install it into an instance's resourcepacks. Overwriting an existing pack needs confirm: true.",
+      "Build a resource pack zip from prismlauncher-mcp/lang-work/<slug>/translated and install it into an instance's resourcepacks. Overwriting an existing pack needs confirm: true.",
     inputSchema: {
       slug: z.string(),
       instanceId: z.string(),
@@ -515,4 +516,4 @@ await bootstrapNas();
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-console.error(`prism-mcp ready (dataDir=${cfg.dataDir}, readOnly=${cfg.readOnly})`);
+console.error(`prismlauncher-mcp ready (dataDir=${cfg.dataDir}, readOnly=${cfg.readOnly})`);

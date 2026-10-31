@@ -5,7 +5,7 @@ import { instanceDir, mcpHome, type PrismConfig } from "./config.js";
 import { audit, backupFiles, requireConfirm, requireWritable } from "./safety.js";
 
 // Translation support tools (user decision 2026-10-31): these are part of
-// prism-mcp but are NEVER triggered automatically by other tools. They only
+// prismlauncher-mcp but are NEVER triggered automatically by other tools. They only
 // run when a client explicitly calls them.
 //
 // Workflow:
@@ -248,7 +248,7 @@ export function buildLangPack(
     "pack.mcmeta",
     Buffer.from(
       JSON.stringify(
-        { pack: { pack_format: 15, description: args.description ?? `${packName} (built by prism-mcp)` } },
+        { pack: { pack_format: 15, description: args.description ?? `${packName} (built by prismlauncher-mcp)` } },
         null,
         2,
       ),

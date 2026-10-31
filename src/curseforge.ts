@@ -24,7 +24,7 @@ import { readInstalledIds } from "./modrinth.js";
 const API = "https://api.curseforge.com/v1";
 const GAME_ID = 432; // Minecraft
 const MOD_CLASS_ID = 6; // Mods
-const UA = "prism-mcp (https://github.com/KeiNodens/prism-mcp)";
+const UA = "prismlauncher-mcp (https://github.com/KeiNodens/prismlauncher-mcp)";
 
 const LOADER_TYPE: Record<string, number> = {
   forge: 1,
