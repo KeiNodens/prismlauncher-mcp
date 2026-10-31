@@ -5,7 +5,7 @@
 This document is written for AI agents that will call this MCP server. It
 states the operating contract precisely: how to connect, which rules to
 follow, and what every tool does. The schemas below were generated from the
-running server (v0.6.0, 45 tools).
+running server (v0.7.0, 46 tools).
 
 ## What this server is
 
@@ -14,10 +14,12 @@ running server (v0.6.0, 45 tools).
   launching to Prism itself.
 - It does not manage accounts and never touches anything outside its data
   directory.
-- **Bridge preference (v0.6.0):** when a bridge-enabled Prism (a Prism build
+- **Bridge preference (v0.6.0+):** when a bridge-enabled Prism (a Prism build
   with the agent bridge, or PrismLauncher-Agent headless) is running for the
   same data directory, `create_instance`, `launch_instance`, `stop_instance`,
-  and `set_setting` are routed through the live app instead of files, and
+  `set_setting`, and the instance settings tools (`set_instance_setting`,
+  `get_instance_setting`, v0.7.0) are routed through the live app instead of
+  files, and
   the results carry `viaBridge: true`. Routing is automatic, falls back to
   the file-level implementation on any failure, and can be disabled with
   the `PRISM_BRIDGE=0` environment variable. Check availability with
@@ -99,7 +101,9 @@ running server (v0.6.0, 45 tools).
   Parameters: `id` (string, required), `newName` (string, required)
 - **delete_instance** — Delete an instance directory. Destructive: requires confirm: true. Key files are backed up first.
   Parameters: `id` (string, required), `confirm` (boolean)
-- **set_instance_setting** — Set one key in an instance's instance.cfg [General] section. Backed up and audit-logged.
+- **get_instance_setting** — Read one key from an instance's settings. When a bridge-enabled Prism is running, reports the effective value the app resolves (instance override when its gate is on, otherwise the global value); otherwise reads instance.cfg [General] directly and reports null when the key is absent there.
+  Parameters: `id` (string, required), `key` (string, required)
+- **set_instance_setting** — Set one key in an instance's settings. When a bridge-enabled Prism is running, the write goes through the app (a file-level write could be overwritten when the app saves on exit) and is verified by reading it back; otherwise instance.cfg is edited directly (backed up and audit-logged). Java and memory tweaks need their Override gate set too, e.g. OverrideJavaArgs=true with JvmArgs, OverrideMemory=true with MinMemAlloc/MaxMemAlloc, OverrideJavaLocation=true with JavaPath.
   Parameters: `id` (string, required), `key` (string, required), `value` (string, required)
 - **list_groups** — List instance groups from instgroups.json.
   Parameters: no parameters

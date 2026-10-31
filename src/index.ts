@@ -10,6 +10,7 @@ import {
   createInstance,
   deleteInstance,
   getInstance,
+  getInstanceSetting,
   listGroups,
   listInstances,
   setInstanceSetting,
@@ -36,7 +37,7 @@ import {
 const cfg = loadConfig(process.argv.slice(2));
 migrateStateDir(cfg.dataDir);
 
-const server = new McpServer({ name: "prismlauncher-mcp", version: "0.6.0" });
+const server = new McpServer({ name: "prismlauncher-mcp", version: "0.7.0" });
 
 function text(value: unknown) {
   return {
@@ -162,12 +163,51 @@ server.registerTool(
 );
 
 server.registerTool(
+  "get_instance_setting",
+  {
+    description:
+      "Read one key from an instance's settings. When a bridge-enabled Prism is running, reports the effective value the app resolves (instance override when its gate is on, otherwise the global value); otherwise reads instance.cfg [General] directly and reports null when the key is absent there.",
+    inputSchema: { id: z.string(), key: z.string() },
+  },
+  async ({ id, key }) => {
+    const via = await tryBridge<{ id: string; key: string; value: unknown }>(cfg, "instance.settings.get", { id, key });
+    if (via) return text({ id, key, value: via.value, viaBridge: true });
+    return text(getInstanceSetting(cfg, id, key));
+  },
+);
+
+// Prism settings are typed (bool/int/string) while this tool takes strings,
+// so coerce the obvious spellings before handing a value to the bridge. The
+// file-level write stores the same text in the INI, which Prism parses the
+// same way, so both routes agree.
+function coerceSettingValue(value: string): unknown {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  if (/^-?\d+$/.test(value)) return Number(value);
+  return value;
+}
+
+server.registerTool(
   "set_instance_setting",
   {
-    description: "Set one key in an instance's instance.cfg [General] section. Backed up and audit-logged.",
+    description:
+      "Set one key in an instance's settings. When a bridge-enabled Prism is running, the write goes through the app (a file-level write could be overwritten when the app saves on exit) and is verified by reading it back; otherwise instance.cfg is edited directly (backed up and audit-logged). Java and memory tweaks need their Override gate set too, e.g. OverrideJavaArgs=true with JvmArgs, OverrideMemory=true with MinMemAlloc/MaxMemAlloc, OverrideJavaLocation=true with JavaPath.",
     inputSchema: { id: z.string(), key: z.string(), value: z.string() },
   },
-  async ({ id, key, value }) => text(setInstanceSetting(cfg, id, key, value)),
+  async ({ id, key, value }) => {
+    if (!cfg.readOnly) {
+      const coerced = coerceSettingValue(value);
+      const via = await tryBridge<{ id: string; key: string; value: unknown }>(cfg, "instance.settings.set", { id, key, value: coerced });
+      if (via) {
+        const check = await tryBridge<{ value: unknown }>(cfg, "instance.settings.get", { id, key });
+        if (check && String(check.value ?? "") === String(coerced)) {
+          return text({ id, key, value: check.value, viaBridge: true });
+        }
+        console.error(`[prismlauncher-mcp] bridge instance.settings.set did not stick for ${id}/${key}, falling back to file write`);
+      }
+    }
+    return text(setInstanceSetting(cfg, id, key, value));
+  },
 );
 
 // ---- global settings (prismlauncher.cfg) ----
@@ -339,7 +379,7 @@ server.registerTool(
   "bridge_status",
   {
     description:
-      "Check whether a bridge-enabled Prism (GUI or PrismLauncher-Agent headless) is running for this data dir. When available, launch/stop/create/set_setting route through the live app.",
+      "Check whether a bridge-enabled Prism (GUI or PrismLauncher-Agent headless) is running for this data dir. When available, launch/stop/create/set_setting/instance settings route through the live app.",
   },
   async () => text(await bridgeStatus(cfg)),
 );

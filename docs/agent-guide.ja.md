@@ -4,7 +4,7 @@
 
 この文書は、この MCP サーバを呼び出す AI エージェントに向けて書かれています。
 接続方法、守るべき運用ルール、全ツールの仕様を正確に記します。以下のスキーマは
-稼働中サーバ（v0.6.0、全45ツール）から生成したものです。
+稼働中サーバ（v0.7.0、全46ツール）から生成したものです。
 
 ## このサーバについて
 
@@ -12,9 +12,10 @@
   です（インスタンス、mod、ワールド、options、servers.dat）。起動は Prism 本体に
   委譲します。
 - アカウント管理は行いません。データフォルダの外には一切触れません。
-- **ブリッジ優先（v0.6.0）:** 同じデータフォルダでブリッジ有効な Prism（エージェント
+- **ブリッジ優先（v0.6.0+）:** 同じデータフォルダでブリッジ有効な Prism（エージェント
   ブリッジ入りビルド、または PrismLauncher-Agent ヘッドレス）が起動中の場合、
-  `create_instance` / `launch_instance` / `stop_instance` / `set_setting` は
+  `create_instance` / `launch_instance` / `stop_instance` / `set_setting` と
+  インスタンス個別設定（`set_instance_setting` / `get_instance_setting`、v0.7.0）は
   ファイルではなく起動中のアプリ経由で実行され、結果に `viaBridge: true` が付きます。
   ルーティングは自動で、失敗時はファイルレベル実装にフォールバックします。
   環境変数 `PRISM_BRIDGE=0` で無効化できます。可用性は `bridge_status` で確認できます。
@@ -89,7 +90,9 @@
   引数: `id` (string, required), `newName` (string, required)
 - **delete_instance** — インスタンス削除（confirm必須）
   引数: `id` (string, required), `confirm` (boolean)
-- **set_instance_setting** — インスタンス個別設定の変更
+- **get_instance_setting** — インスタンス個別設定の取得。ブリッジ有効な Prism が起動中の場合はアプリが解決する実効値（ゲート有効時はインスタンスの上書き、無効時は全体設定の値）を返し、それ以外は instance.cfg の [General] を直接読み、キーが無ければ null を返す
+  引数: `id` (string, required), `key` (string, required)
+- **set_instance_setting** — インスタンス個別設定の変更。ブリッジ有効な Prism が起動中の場合はアプリ経由で書き込み、読み戻して検証する（ファイル直書きはアプリ終了時の保存で上書きされ得るため）。それ以外は instance.cfg を直接編集（バックアップ・監査ログ付き）。Java 引数やメモリの変更には対応する Override ゲートも必要（例: JvmArgs には OverrideJavaArgs=true、MinMemAlloc/MaxMemAlloc には OverrideMemory=true、JavaPath には OverrideJavaLocation=true）
   引数: `id` (string, required), `key` (string, required), `value` (string, required)
 - **list_groups** — グループ一覧
   引数: no parameters

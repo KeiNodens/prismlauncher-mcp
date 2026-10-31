@@ -72,7 +72,8 @@ install location (`%LOCALAPPDATA%\Programs\PrismLauncher`) or on `PATH`.
 ## Tools
 
 **Instances:** `list_instances`, `get_instance`, `create_instance`,
-`clone_instance`, `delete_instance`, `set_instance_setting`, `list_groups`,
+`clone_instance`, `delete_instance`, `set_instance_setting`,
+`get_instance_setting`, `list_groups`,
 `list_versions`
 
 **Settings:** `get_settings`, `set_setting` (global `prismlauncher.cfg`)
@@ -119,14 +120,17 @@ For AI agents: [docs/agent-guide.md](docs/agent-guide.md) (operating rules, work
 
 ## Status
 
-v0.6.0 — Phase 1 (file-level operation) is implemented and verified,
+v0.7.0 — Phase 1 (file-level operation) is implemented and verified,
 including the end-to-end demo (create instance → install mod → launch →
 title-screen screenshot), dependency-aware installs from Modrinth and
 CurseForge, update checks, modpack import (.mrpack and CurseForge zip),
 servers.dat editing and the translation support tools. v0.6.0 adds the
 Phase 2 bridge transport: when a bridge-enabled Prism is running for the
 data directory, create/launch/stop/set_setting route through the live app
-(see `bridge_status`). A repeatable smoke
+(see `bridge_status`). v0.7.0 extends bridge routing to per-instance
+settings (`set_instance_setting`, plus the new `get_instance_setting`),
+so Java arguments and memory limits can be changed safely while Prism
+is running. A repeatable smoke
 test lives in `scripts/smoke.mjs`.
 
 ## License

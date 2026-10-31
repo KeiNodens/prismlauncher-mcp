@@ -226,3 +226,10 @@ export function setInstanceSetting(cfg: PrismConfig, id: string, key: string, va
   audit(cfg, "set_instance_setting", id, { key, value });
   return { id, key, value };
 }
+
+export function getInstanceSetting(cfg: PrismConfig, id: string, key: string) {
+  const cfgPath = path.join(instanceDir(cfg.dataDir, id), "instance.cfg");
+  if (!fs.existsSync(cfgPath)) throw new Error(`instance not found: ${id}`);
+  const ini = parseIni(fs.readFileSync(cfgPath, "utf8"));
+  return { id, key, value: iniGet(ini, "General", key) ?? null };
+}

@@ -71,7 +71,8 @@ node dist/index.js --data-dir C:\path\to\PrismLauncher-data
 ## ツール一覧
 
 **インスタンス:** `list_instances`, `get_instance`, `create_instance`,
-`clone_instance`, `delete_instance`, `set_instance_setting`, `list_groups`,
+`clone_instance`, `delete_instance`, `set_instance_setting`,
+`get_instance_setting`, `list_groups`,
 `list_versions`
 
 **設定:** `get_settings`, `set_setting`（全体設定 `prismlauncher.cfg`）
@@ -117,12 +118,15 @@ AIエージェント向け: [docs/agent-guide.ja.md](docs/agent-guide.ja.md)（�
 
 ## ステータス
 
-v0.6.0 — Phase 1（ファイルレベル操作）は実装・検証済みです。一気通貫デモ
+v0.7.0 — Phase 1（ファイルレベル操作）は実装・検証済みです。一気通貫デモ
 （インスタンス作成 → mod 導入 → 起動 → タイトル画面のスクリーンショット確認）、
 Modrinth / CurseForge の依存解決つき導入、更新チェック、Modpack 取り込み
 （.mrpack / CurseForge 形式）、翻訳支援ツールまでを含みます。v0.6.0 では
 Phase 2 のブリッジ接続が加わり、ブリッジ有効な Prism が起動中のデータフォルダでは
 作成/起動/停止/設定書き込みが起動中のアプリ経由になります（`bridge_status` 参照）。
+v0.7.0 ではインスタンス個別設定（`set_instance_setting` と新ツール
+`get_instance_setting`）もブリッジ経由になり、Prism 起動中のままで Java
+引数やメモリ上限を安全に変更できます。
 再現可能な
 スモークテストが `scripts/smoke.mjs` にあります。
 
