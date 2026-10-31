@@ -67,9 +67,9 @@ on both a test dir and your real data, register two server entries with
 different names (e.g. `prism-test`, `prism`) — and keep the real one
 `--read-only` until you trust the workflow.
 
-## NAS-backed instances (Buffalo LinkStation)
+## NAS-backed instances (e.g. a Buffalo LinkStation)
 
-Instances that live on the NAS (`\\LS220D63E\Share\ゲーム保存\minecraftinstance`)
+Instances that live on the NAS (`\\<NAS>\Share\<game-folder>\minecraftinstance`)
 are linked into `instances/` as per-instance symbolic links, so Prism and
 prism-mcp see one flat list.
 
