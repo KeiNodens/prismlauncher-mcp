@@ -77,9 +77,12 @@ install location (`%LOCALAPPDATA%\Programs\PrismLauncher`) or on `PATH`.
 
 **Mods (Modrinth):** `search_mods`, `install_mod` (required dependencies are
 installed recursively and reported; optional ones are only reported),
-`list_mods`, `remove_mod`, `set_mod_enabled`, `check_mod_updates`, `update_mod`
+`list_mods`, `remove_mod`, `set_mod_enabled`, `check_mod_updates`, `update_mod`,
+`list_mod_versions` (browse versions; pass a version id to `install_mod` to
+pin or roll back)
 
-**CurseForge:** `search_mods_cf`, `install_mod_cf` (required dependencies
+**CurseForge:** `search_mods_cf`, `list_mod_files_cf` (browse files; pass a
+file id to `install_mod_cf` to pin or roll back), `install_mod_cf` (required dependencies
 recursively; files whose authors disabled third-party distribution come back
 as `blocked` with a mod-page URL for manual download — no scraping, ever),
 `list_blocked_mods`, `resolve_blocked_mods` (sha1-matched placement of

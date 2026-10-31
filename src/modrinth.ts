@@ -180,6 +180,51 @@ async function installOne(
   };
 }
 
+
+export interface VersionListing {
+  id: string;
+  versionNumber: string;
+  name: string;
+  type: string;
+  datePublished?: string;
+  fileName?: string;
+  matchesInstance: boolean;
+}
+
+export function annotateVersions(versions: MrVersion[], mcVersion?: string, loader?: string): VersionListing[] {
+  return versions.map((v) => ({
+    id: v.id,
+    versionNumber: v.version_number,
+    name: v.name,
+    type: v.version_type,
+    datePublished: v.date_published,
+    fileName: (v.files.find((f) => f.primary) ?? v.files[0])?.filename,
+    matchesInstance:
+      (!mcVersion || v.game_versions.includes(mcVersion)) && (!loader || v.loaders.includes(loader)),
+  }));
+}
+
+export async function listModVersions(cfg: PrismConfig, projectRef: string, instanceId?: string) {
+  const project = await getProject(projectRef);
+  const versions = await listProjectVersions(project.id);
+  let mcVersion: string | undefined;
+  let loader: string | undefined;
+  if (instanceId) {
+    const { getInstance } = await import("./instances.js");
+    const inst = getInstance(cfg, instanceId);
+    mcVersion = inst.mcVersion;
+    loader = inst.loader;
+  }
+  const listings = annotateVersions(versions, mcVersion, loader);
+  return {
+    project: project.title,
+    slug: project.slug,
+    autoPick: listings.find((l) => l.matchesInstance && l.type === "release") ?? listings.find((l) => l.matchesInstance),
+    versions: listings.slice(0, 50),
+    note: "Install a specific version with install_mod's versionId (for rollback when a release is buggy).",
+  };
+}
+
 export async function installMod(
   cfg: PrismConfig,
   instanceId: string,

@@ -170,6 +170,43 @@ export async function searchModsCf(
   }));
 }
 
+
+export function cfReleaseLabel(releaseType: number): string {
+  return releaseType === 1 ? "release" : releaseType === 2 ? "beta" : releaseType === 3 ? "alpha" : String(releaseType);
+}
+
+export async function listModFilesCf(cfg: PrismConfig, args: { modId: number; instanceId?: string }) {
+  const mod = await cfFetch<CfMod>(cfg, `/mods/${args.modId}`);
+  let mcVersion: string | undefined;
+  let loader: string | undefined;
+  if (args.instanceId) {
+    const { getInstance } = await import("./instances.js");
+    const inst = getInstance(cfg, args.instanceId);
+    mcVersion = inst.mcVersion;
+    loader = inst.loader;
+  }
+  const files = await fetchFilesFiltered(cfg, args.modId, mcVersion, loader);
+  const listings = files.map((f) => ({
+    fileId: f.id,
+    displayName: f.displayName,
+    fileName: f.fileName,
+    type: cfReleaseLabel(f.releaseType),
+    fileDate: f.fileDate,
+    gameVersions: f.gameVersions,
+    blocked: isBlocked(f),
+    matchesInstance: fileMatches(f, mcVersion, loader),
+  }));
+  const picked = selectCfFile(files, mcVersion, loader);
+  return {
+    mod: mod.name,
+    autoPick: picked
+      ? { fileId: picked.id, fileName: picked.fileName, type: cfReleaseLabel(picked.releaseType) }
+      : undefined,
+    files: listings.slice(0, 50),
+    note: "Install a specific file with install_mod_cf's fileId (for rollback when a release is buggy).",
+  };
+}
+
 // ---- blocked records ----
 
 export interface BlockedRecord {

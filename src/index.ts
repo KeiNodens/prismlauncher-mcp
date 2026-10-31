@@ -14,11 +14,11 @@ import {
   setInstanceSetting,
 } from "./instances.js";
 import { getSetting, getSettings, setSetting } from "./settings.js";
-import { checkModUpdates, removeMod, setModEnabled, updateMod } from "./modrinth.js";
+import { checkModUpdates, listModVersions, removeMod, setModEnabled, updateMod } from "./modrinth.js";
 import { getOptions, getWorld, listWorlds, setOption } from "./worlds.js";
 import { importModpack } from "./modpack.js";
 import { buildLangPack, checkLangConsistency, extractLang } from "./lang.js";
-import { installModCf, loadBlocked, resolveBlockedMods, searchModsCf } from "./curseforge.js";
+import { installModCf, listModFilesCf, loadBlocked, resolveBlockedMods, searchModsCf } from "./curseforge.js";
 import { listVersions, LOADER_UIDS } from "./meta.js";
 import { installMod, listMods, searchMods } from "./modrinth.js";
 import {
@@ -33,7 +33,7 @@ import {
 
 const cfg = loadConfig(process.argv.slice(2));
 
-const server = new McpServer({ name: "prism-mcp", version: "0.3.0" });
+const server = new McpServer({ name: "prism-mcp", version: "0.3.1" });
 
 function text(value: unknown) {
   return {
@@ -391,6 +391,16 @@ server.registerTool(
 );
 
 
+server.registerTool(
+  "list_mod_versions",
+  {
+    description:
+      "List a Modrinth project's versions (newest first). With instanceId, versions are annotated with matchesInstance and the auto-picked latest release is shown. Use a version's id with install_mod to pin or roll back a version.",
+    inputSchema: { project: z.string(), instanceId: z.string().optional() },
+  },
+  async ({ project, instanceId }) => text(await listModVersions(cfg, project, instanceId)),
+);
+
 // ---- CurseForge ----
 server.registerTool(
   "search_mods_cf",
@@ -404,6 +414,16 @@ server.registerTool(
     },
   },
   async (args) => text(await searchModsCf(cfg, args)),
+);
+
+server.registerTool(
+  "list_mod_files_cf",
+  {
+    description:
+      "List a CurseForge mod's files. With instanceId, files are filtered to the instance's MC version/loader and the auto-picked latest release is shown. Use a file's fileId with install_mod_cf to pin or roll back a version.",
+    inputSchema: { modId: z.number(), instanceId: z.string().optional() },
+  },
+  async (args) => text(await listModFilesCf(cfg, args)),
 );
 
 server.registerTool(
