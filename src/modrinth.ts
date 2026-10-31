@@ -113,12 +113,55 @@ function writeIndexFile(indexDir: string, slug: string, filename: string, file: 
   fs.writeFileSync(path.join(indexDir, `${slug}.pw.toml`), toml, "utf8");
 }
 
+
+// ---- installed index + dependency bookkeeping (shared with curseforge.ts) ----
+
+export interface InstalledId {
+  source: "modrinth" | "curseforge";
+  indexFile: string;
+}
+
+// Map of project id (Modrinth id, or CurseForge project id as a string) for
+// every mod recorded in mods/.index/*.pw.toml.
+export function readInstalledIds(modsDir: string): Map<string, InstalledId> {
+  const out = new Map<string, InstalledId>();
+  const indexDir = path.join(modsDir, ".index");
+  if (!fs.existsSync(indexDir)) return out;
+  for (const name of fs.readdirSync(indexDir)) {
+    if (!name.endsWith(".pw.toml")) continue;
+    const text = fs.readFileSync(path.join(indexDir, name), "utf8");
+    const mr = /\[update\.modrinth\][\s\S]*?mod-id\s*=\s*"([^"]+)"/.exec(text);
+    if (mr) out.set(mr[1], { source: "modrinth", indexFile: name });
+    const cf = /\[update\.curseforge\][\s\S]*?project-id\s*=\s*(\d+)/.exec(text);
+    if (cf) out.set(cf[1], { source: "curseforge", indexFile: name });
+  }
+  return out;
+}
+
+export type DepAction = "install" | "skip" | "conflict";
+
+// Decide what to do with a required dependency that was already installed
+// earlier in the same install run.
+export function classifyDep(seenVersionId: string | undefined, requestedVersionId?: string): DepAction {
+  if (seenVersionId === undefined) return "install";
+  if (requestedVersionId && requestedVersionId !== seenVersionId) return "conflict";
+  return "skip";
+}
+
+export interface DepContext {
+  visited: Map<string, { versionId: string; versionNumber: string }>;
+  conflicts: { project: string; keptVersion: string; requestedVersionId: string }[];
+  declaredIncompatibles: Map<string, string>;
+  titles: Map<string, string>;
+}
+
 export interface InstallResult {
   project: string;
   version: string;
   file: string;
   installedDeps: InstallResult[];
   skippedOptionalDeps: string[];
+  alreadyPresent?: boolean;
   note?: string;
 }
 
@@ -131,6 +174,7 @@ async function installOne(
   loader?: string,
   versionId?: string,
   depth = 0,
+  ctx?: DepContext,
 ): Promise<InstallResult> {
   const project = await getProject(projectRef);
   const versions = await listProjectVersions(project.id);
@@ -145,28 +189,58 @@ async function installOne(
   fs.mkdirSync(targetDir, { recursive: true });
   const targetPath = path.join(targetDir, file.filename);
 
-  const res = await fetch(file.url, { headers: { "User-Agent": UA } });
-  if (!res.ok) throw new Error(`download failed HTTP ${res.status}: ${file.url}`);
-  const buf = Buffer.from(await res.arrayBuffer());
-  const digest = sha1(buf);
-  if (digest !== file.hashes.sha1) throw new Error(`sha1 mismatch for ${file.filename}: got ${digest}`);
-
-  if (fs.existsSync(targetPath)) backupFiles(cfg, [targetPath]);
-  fs.writeFileSync(targetPath, buf);
+  // On-disk dedupe: the identical file is already installed -> no download.
+  let alreadyPresent = false;
+  if (fs.existsSync(targetPath) && sha1(fs.readFileSync(targetPath)) === file.hashes.sha1) {
+    alreadyPresent = true;
+  } else {
+    const res = await fetch(file.url, { headers: { "User-Agent": UA } });
+    if (!res.ok) throw new Error(`download failed HTTP ${res.status}: ${file.url}`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    const digest = sha1(buf);
+    if (digest !== file.hashes.sha1) throw new Error(`sha1 mismatch for ${file.filename}: got ${digest}`);
+    if (fs.existsSync(targetPath)) backupFiles(cfg, [targetPath]);
+    fs.writeFileSync(targetPath, buf);
+  }
   if (type === "mod") {
     writeIndexFile(path.join(targetDir, ".index"), project.slug, file.filename, file, project.id, version.id);
   }
+  ctx?.visited.set(project.id, { versionId: version.id, versionNumber: version.version_number });
 
   const installedDeps: InstallResult[] = [];
   const skippedOptionalDeps: string[] = [];
   if (depth < 4) {
     for (const dep of version.dependencies) {
       if (dep.dependency_type === "required") {
+        const action = ctx ? classifyDep(ctx.visited.get(dep.project_id)?.versionId, dep.version_id) : "install";
+        if (action === "skip") continue;
+        if (action === "conflict" && ctx) {
+          const kept = ctx.visited.get(dep.project_id);
+          ctx.conflicts.push({
+            project: dep.project_id,
+            keptVersion: kept?.versionNumber ?? "unknown",
+            requestedVersionId: dep.version_id as string,
+          });
+          continue;
+        }
         installedDeps.push(
-          await installOne(cfg, instDir, type, dep.project_id, mcVersion, loader, dep.version_id, depth + 1),
+          await installOne(cfg, instDir, type, dep.project_id, mcVersion, loader, dep.version_id, depth + 1, ctx),
         );
       } else if (dep.dependency_type === "optional") {
         skippedOptionalDeps.push(dep.project_id);
+      } else if (dep.dependency_type === "incompatible" && ctx) {
+        if (!ctx.declaredIncompatibles.has(dep.project_id)) {
+          let title = ctx.titles.get(dep.project_id);
+          if (!title) {
+            try {
+              title = (await getProject(dep.project_id)).title;
+            } catch {
+              title = dep.project_id;
+            }
+            ctx.titles.set(dep.project_id, title);
+          }
+          ctx.declaredIncompatibles.set(dep.project_id, title);
+        }
       }
     }
   }
@@ -177,6 +251,7 @@ async function installOne(
     file: file.filename,
     installedDeps,
     skippedOptionalDeps,
+    ...(alreadyPresent ? { alreadyPresent: true } : {}),
   };
 }
 
@@ -237,6 +312,12 @@ export async function installMod(
   // Instance mc/loader for version matching.
   const { getInstance } = await import("./instances.js");
   const inst = getInstance(cfg, instanceId);
+  const ctx: DepContext = {
+    visited: new Map(),
+    conflicts: [],
+    declaredIncompatibles: new Map(),
+    titles: new Map(),
+  };
   const result = await installOne(
     cfg,
     instDir,
@@ -245,9 +326,20 @@ export async function installMod(
     inst.mcVersion,
     inst.loader,
     opts.versionId,
+    0,
+    ctx,
   );
+  const modsDir = path.join(instDir, "minecraft", "mods");
+  const installedIds = readInstalledIds(modsDir);
+  const declaredIncompatibles = [...ctx.declaredIncompatibles].map(([id, name]) => ({ id, name }));
+  const incompatibleWarnings = declaredIncompatibles.filter((d) => installedIds.has(d.id));
   audit(cfg, "install_mod", instanceId, { projectRef, ...opts, result: result.file });
-  return result;
+  return {
+    ...result,
+    ...(ctx.conflicts.length ? { dependencyConflicts: ctx.conflicts } : {}),
+    ...(declaredIncompatibles.length ? { declaredIncompatibles } : {}),
+    ...(incompatibleWarnings.length ? { incompatibleWarnings } : {}),
+  };
 }
 
 export function listMods(cfg: PrismConfig, instanceId: string) {

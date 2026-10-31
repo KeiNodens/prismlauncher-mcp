@@ -84,3 +84,26 @@ test("fileMatches / isBlocked / fileSha1 basics", () => {
   assert.equal(isBlocked(CF_FILES[0]), false);
   assert.equal(fileSha1(CF_FILES[0]), "aa");
 });
+
+import { classifyDep, readInstalledIds } from "../dist/modrinth.js";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+
+test("classifyDep: install / skip / conflict", () => {
+  assert.equal(classifyDep(undefined, undefined), "install");
+  assert.equal(classifyDep("v1", undefined), "skip");
+  assert.equal(classifyDep("v1", "v1"), "skip");
+  assert.equal(classifyDep("v1", "v2"), "conflict");
+});
+
+test("readInstalledIds parses modrinth and curseforge index entries", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "idx-"));
+  const mods = path.join(dir, "mods");
+  fs.mkdirSync(path.join(mods, ".index"), { recursive: true });
+  fs.writeFileSync(path.join(mods, ".index", "a.pw.toml"), 'name = "a"\n\n[update]\n[update.modrinth]\nmod-id = "AbCd1234"\nversion = "v1"\n');
+  fs.writeFileSync(path.join(mods, ".index", "b.pw.toml"), 'name = "b"\n\n[update]\n[update.curseforge]\nfile-id = 4770828\nproject-id = 248787\n');
+  const ids = readInstalledIds(mods);
+  assert.equal(ids.get("AbCd1234")?.source, "modrinth");
+  assert.equal(ids.get("248787")?.source, "curseforge");
+});

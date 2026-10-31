@@ -79,7 +79,10 @@ install location (`%LOCALAPPDATA%\Programs\PrismLauncher`) or on `PATH`.
 installed recursively and reported; optional ones are only reported),
 `list_mods`, `remove_mod`, `set_mod_enabled`, `check_mod_updates`, `update_mod`,
 `list_mod_versions` (browse versions; pass a version id to `install_mod` to
-pin or roll back)
+pin or roll back). Required dependencies are installed recursively with
+deduplication: an identical file already present is not downloaded again,
+conflicting version pins between parents are reported, and author-declared
+incompatible mods are checked against the instance and warned about
 
 **CurseForge:** `search_mods_cf`, `list_mod_files_cf` (browse files; pass a
 file id to `install_mod_cf` to pin or roll back), `install_mod_cf` (required dependencies

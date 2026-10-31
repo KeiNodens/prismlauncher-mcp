@@ -4,6 +4,7 @@ import path from "node:path";
 import { instanceDir, mcpHome, type PrismConfig } from "./config.js";
 import { parseIni, iniGet } from "./ini.js";
 import { audit, backupFiles, requireWritable } from "./safety.js";
+import { readInstalledIds } from "./modrinth.js";
 
 // CurseForge (Core API) support, per PLAN.md:
 // - Uses the USER'S OWN API key, read at runtime from prismlauncher.cfg
@@ -304,6 +305,14 @@ export interface CfInstallOutcome {
   blocked: BlockedRecord[];
   skippedOptionalDeps: string[];
   unresolvedDeps: string[];
+  declaredIncompatibles: { modId: number; name: string }[];
+  incompatibleWarnings: { modId: number; name: string }[];
+  dependencyConflicts: { modId: number; keptFileId: number; requestedFileId: number }[];
+}
+
+interface CfCtx {
+  visited: Map<number, number>; // modId -> installed fileId
+  titles: Map<number, string>;
 }
 
 async function installCfFile(
@@ -313,7 +322,7 @@ async function installCfFile(
   mod: CfMod,
   file: CfFile,
   out: CfInstallOutcome,
-  visited: Set<number>,
+  ctx: CfCtx,
   depth: number,
 ): Promise<void> {
   const expected = fileSha1(file);
@@ -328,7 +337,8 @@ async function installCfFile(
         fs.writeFileSync(target, buf);
         writeCfIndexFile(path.join(modsDir, ".index"), mod.slug, file.fileName, file, mod.id, mrUrl);
         out.installed.push({ mod: mod.name, file: file.fileName, via: "modrinth-sha1-fallback" });
-        await installDeps(cfg, instanceId, modsDir, file, out, visited, depth);
+        ctx.visited.set(mod.id, file.id);
+        await installDeps(cfg, instanceId, modsDir, file, out, ctx, depth);
         return;
       }
     }
@@ -345,13 +355,31 @@ async function installCfFile(
     out.blocked.push(rec);
     return;
   }
-  const buf = await downloadVerified(file.downloadUrl as string, expected);
   const target = path.join(modsDir, file.fileName);
-  if (fs.existsSync(target)) backupFiles(cfg, [target]);
-  fs.writeFileSync(target, buf);
-  writeCfIndexFile(path.join(modsDir, ".index"), mod.slug, file.fileName, file, mod.id, file.downloadUrl as string);
-  out.installed.push({ mod: mod.name, file: file.fileName });
-  await installDeps(cfg, instanceId, modsDir, file, out, visited, depth);
+  if (expected && fs.existsSync(target) && sha1(fs.readFileSync(target)) === expected) {
+    out.installed.push({ mod: mod.name, file: file.fileName, via: "already-present" });
+  } else {
+    const buf = await downloadVerified(file.downloadUrl as string, expected);
+    if (fs.existsSync(target)) backupFiles(cfg, [target]);
+    fs.writeFileSync(target, buf);
+    writeCfIndexFile(path.join(modsDir, ".index"), mod.slug, file.fileName, file, mod.id, file.downloadUrl as string);
+    out.installed.push({ mod: mod.name, file: file.fileName });
+  }
+  ctx.visited.set(mod.id, file.id);
+  await installDeps(cfg, instanceId, modsDir, file, out, ctx, depth);
+}
+
+async function cfTitle(cfg: PrismConfig, ctx: CfCtx, modId: number): Promise<string> {
+  const hit = ctx.titles.get(modId);
+  if (hit) return hit;
+  let name = String(modId);
+  try {
+    name = (await cfFetch<CfMod>(cfg, `/mods/${modId}`)).name;
+  } catch {
+    /* keep the id as the name */
+  }
+  ctx.titles.set(modId, name);
+  return name;
 }
 
 async function installDeps(
@@ -360,21 +388,34 @@ async function installDeps(
   modsDir: string,
   file: CfFile,
   out: CfInstallOutcome,
-  visited: Set<number>,
+  ctx: CfCtx,
   depth: number,
 ): Promise<void> {
   if (depth >= 4) return;
   const { getInstance } = await import("./instances.js");
   const inst = getInstance(cfg, instanceId);
   for (const dep of file.dependencies) {
-    if (dep.relationType !== 3) {
-      if (dep.relationType === 2) out.skippedOptionalDeps.push(String(dep.modId));
+    if (dep.relationType === 5) {
+      // Declared incompatible: collect for the post-install presence check.
+      if (!out.declaredIncompatibles.some((d) => d.modId === dep.modId)) {
+        out.declaredIncompatibles.push({ modId: dep.modId, name: await cfTitle(cfg, ctx, dep.modId) });
+      }
       continue;
     }
-    if (visited.has(dep.modId)) continue;
-    visited.add(dep.modId);
+    if (dep.relationType !== 3) {
+      if (dep.relationType === 2) out.skippedOptionalDeps.push(String(dep.modId));
+      continue; // 1 embedded / 4 tool / 6 include: nothing to install
+    }
+    const keptFileId = ctx.visited.get(dep.modId);
+    if (keptFileId !== undefined) {
+      if (dep.fileId && dep.fileId !== keptFileId) {
+        out.dependencyConflicts.push({ modId: dep.modId, keptFileId, requestedFileId: dep.fileId });
+      }
+      continue;
+    }
     try {
       const depMod = await cfFetch<CfMod>(cfg, `/mods/${dep.modId}`);
+      ctx.titles.set(dep.modId, depMod.name);
       let depFile: CfFile;
       if (dep.fileId) {
         depFile = await cfFetch<CfFile>(cfg, `/mods/${dep.modId}/files/${dep.fileId}`);
@@ -387,7 +428,7 @@ async function installDeps(
         }
         depFile = picked;
       }
-      await installCfFile(cfg, instanceId, modsDir, depMod, depFile, out, visited, depth + 1);
+      await installCfFile(cfg, instanceId, modsDir, depMod, depFile, out, ctx, depth + 1);
     } catch (e) {
       out.unresolvedDeps.push(`mod ${dep.modId}: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -420,8 +461,19 @@ export async function installModCf(
   }
   const modsDir = path.join(instDir, "minecraft", "mods");
   fs.mkdirSync(modsDir, { recursive: true });
-  const out: CfInstallOutcome = { installed: [], blocked: [], skippedOptionalDeps: [], unresolvedDeps: [] };
-  await installCfFile(cfg, instanceId, modsDir, mod, file, out, new Set([mod.id]), 0);
+  const out: CfInstallOutcome = {
+    installed: [],
+    blocked: [],
+    skippedOptionalDeps: [],
+    unresolvedDeps: [],
+    declaredIncompatibles: [],
+    incompatibleWarnings: [],
+    dependencyConflicts: [],
+  };
+  const ctx: CfCtx = { visited: new Map(), titles: new Map() };
+  await installCfFile(cfg, instanceId, modsDir, mod, file, out, ctx, 0);
+  const installedIds = readInstalledIds(modsDir);
+  out.incompatibleWarnings = out.declaredIncompatibles.filter((d) => installedIds.has(String(d.modId)));
   const status =
     out.blocked.length === 0 ? "installed" : out.installed.length === 0 ? "blocked" : "partial_blocked";
   audit(cfg, "install_mod_cf", instanceId, {

@@ -33,7 +33,7 @@ import {
 
 const cfg = loadConfig(process.argv.slice(2));
 
-const server = new McpServer({ name: "prism-mcp", version: "0.3.1" });
+const server = new McpServer({ name: "prism-mcp", version: "0.3.2" });
 
 function text(value: unknown) {
   return {
