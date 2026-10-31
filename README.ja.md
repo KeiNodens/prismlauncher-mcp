@@ -113,6 +113,8 @@ sha1 検証付きでダウンロード、overrides を展開）, `import_modpack
 Claude Code、Codex、その他の MCP クライアント向け設定は
 [docs/setup.md](docs/setup.md) を参照してください。
 
+AIエージェント向け: [docs/agent-guide.ja.md](docs/agent-guide.ja.md)（運用ルール、ワークフロー、全ツールリファレンス）
+
 ## ステータス
 
 v0.5.0 — Phase 1（ファイルレベル操作）は実装・検証済みです。一気通貫デモ

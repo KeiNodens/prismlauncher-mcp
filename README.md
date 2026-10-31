@@ -115,6 +115,8 @@ NBT-level edits that preserve unknown fields on existing entries)
 See [docs/setup.md](docs/setup.md) for Claude Code, Codex and generic MCP
 client configuration.
 
+For AI agents: [docs/agent-guide.md](docs/agent-guide.md) (operating rules, workflows, full tool reference).
+
 ## Status
 
 v0.5.0 — Phase 1 (file-level operation) is implemented and verified,
