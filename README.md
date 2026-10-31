@@ -3,7 +3,9 @@
 An MCP (Model Context Protocol) server that lets an AI agent operate
 [Prism Launcher](https://prismlauncher.org/) at the **file level** — create
 instances, install mods from Modrinth, launch the game, read logs and fetch
-screenshots — without modifying the stock launcher.
+screenshots — without modifying the stock launcher. It also carries
+mod-translation support tools (lang extraction, consistency checks and
+language-pack building) that run only when explicitly called.
 
 This is Layer 1 of the `prism` project (see `../PLAN.md`). Layer 2
 (`prism-bridge`, a patched Prism fork) adds live operations later; everything
@@ -23,6 +25,21 @@ Prism keeps almost everything an agent needs in plain files:
 
 Launching still goes through Prism itself (`prismlauncher --launch <id>`), so
 accounts, Java resolution and downloads stay in Prism's hands.
+
+## Translation support (explicit invocation only)
+
+Three tools support translating mod language files. They are never triggered
+automatically by other tools; a client must call them directly.
+
+1. `extract_lang` — pull `assets/<modid>/lang/*` out of a mod jar into
+   `prism-mcp/lang-work/<slug>/source/`.
+2. Translate into `lang-work/<slug>/translated/` (same relative paths,
+   target-locale file names), then `check_lang_consistency` — reports missing
+   and extra keys, placeholder / format-code mismatches and untranslated
+   leftovers against the source locale.
+3. `build_lang_pack` — zip `translated/` into a resource pack and install it
+   into an instance's `resourcepacks/` (overwriting an existing pack needs
+   `confirm: true` and is backed up first).
 
 ## Safety model
 
@@ -60,7 +77,7 @@ install location (`%LOCALAPPDATA%\Programs\PrismLauncher`) or on `PATH`.
 
 **Mods (Modrinth):** `search_mods`, `install_mod` (required dependencies are
 installed recursively and reported; optional ones are only reported),
-`list_mods`, `remove_mod`, `set_mod_enabled`, `check_mod_updates`
+`list_mods`, `remove_mod`, `set_mod_enabled`, `check_mod_updates`, `update_mod`
 
 **Modpacks:** `import_modpack` (.mrpack: instance creation from the pack's
 declared dependencies, sha1-verified downloads, overrides extraction)
@@ -69,6 +86,8 @@ declared dependencies, sha1-verified downloads, overrides extraction)
 `set_option` (options.txt)
 
 **Game:** `launch_instance`, `get_instance_status`, `tail_log`,
+
+**Translation (explicit only):** `extract_lang`, `check_lang_consistency`, `build_lang_pack` — see the Translation support section above.
 `wait_for_event`, `stop_instance`, `list_screenshots`, `get_screenshot`
 
 ## Connecting an MCP client

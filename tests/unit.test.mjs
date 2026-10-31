@@ -40,3 +40,26 @@ test("resolveLwjgl reads suggests/equals from the minecraft entry", () => {
   assert.equal(resolveLwjgl({ version: "1.20.1", requires: [{ uid: "org.lwjgl3", suggests: "3.3.1" }] }), "3.3.1");
   assert.equal(resolveLwjgl({ version: "1.7.10", requires: [] }), undefined);
 });
+
+import { compareLang, placeholdersOf, parseLangProps } from "../dist/lang.js";
+
+test("placeholdersOf extracts printf args, section codes and braces", () => {
+  assert.deepEqual(placeholdersOf("Hello %s, you have %2$d \u00a7a{0}"), ["%2$d", "%s", "\u00a7a", "{0}"].sort());
+});
+
+test("compareLang reports missing, extra, mismatch and identical", () => {
+  const src = { a: "Hi %s", b: "Bye", c: "\u00a7cRed", d: "Same" };
+  const tr = { a: "やあ", b: "バイ", c: "\u00a7c赤", d: "Same", e: "extra" };
+  const diff = compareLang(src, tr);
+  assert.deepEqual(diff.missing, []);
+  assert.deepEqual(diff.extra, ["e"]);
+  assert.equal(diff.placeholderMismatch.length, 1);
+  assert.equal(diff.placeholderMismatch[0].key, "a");
+  assert.deepEqual(diff.identicalValues, ["d"]);
+});
+
+test("parseLangProps reads legacy .lang files", () => {
+  const out = parseLangProps("# comment\nitem.demo.name=Demo\n\nfoo=bar=baz\n");
+  assert.equal(out["item.demo.name"], "Demo");
+  assert.equal(out["foo"], "bar=baz");
+});

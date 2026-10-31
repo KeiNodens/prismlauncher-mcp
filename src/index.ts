@@ -17,6 +17,7 @@ import { getSetting, getSettings, setSetting } from "./settings.js";
 import { checkModUpdates, removeMod, setModEnabled, updateMod } from "./modrinth.js";
 import { getOptions, getWorld, listWorlds, setOption } from "./worlds.js";
 import { importModpack } from "./modpack.js";
+import { buildLangPack, checkLangConsistency, extractLang } from "./lang.js";
 import { listVersions, LOADER_UIDS } from "./meta.js";
 import { installMod, listMods, searchMods } from "./modrinth.js";
 import {
@@ -31,7 +32,7 @@ import {
 
 const cfg = loadConfig(process.argv.slice(2));
 
-const server = new McpServer({ name: "prism-mcp", version: "0.1.0" });
+const server = new McpServer({ name: "prism-mcp", version: "0.2.0" });
 
 function text(value: unknown) {
   return {
@@ -348,6 +349,44 @@ server.registerTool(
       ],
     };
   },
+);
+
+
+// ---- translation support (explicit invocation only; never automatic) ----
+server.registerTool(
+  "extract_lang",
+  {
+    description:
+      "Extract a mod jar's language files (assets/<modid>/lang/*) into prism-mcp/lang-work/<slug>/source for translation. Explicit use only.",
+    inputSchema: { instanceId: z.string().optional(), modFile: z.string().optional(), jarPath: z.string().optional() },
+  },
+  async (args) => text(extractLang(cfg, args)),
+);
+
+server.registerTool(
+  "check_lang_consistency",
+  {
+    description:
+      "Compare translated lang files against the extracted source: missing/extra keys, placeholder and format-code mismatches, untranslated leftovers. Read-only.",
+    inputSchema: { slug: z.string(), sourceLocale: z.string().optional(), targetLocale: z.string().optional() },
+  },
+  async (args) => text(checkLangConsistency(cfg, args)),
+);
+
+server.registerTool(
+  "build_lang_pack",
+  {
+    description:
+      "Build a resource pack zip from prism-mcp/lang-work/<slug>/translated and install it into an instance's resourcepacks. Overwriting an existing pack needs confirm: true.",
+    inputSchema: {
+      slug: z.string(),
+      instanceId: z.string(),
+      packName: z.string().optional(),
+      description: z.string().optional(),
+      confirm: z.boolean().optional(),
+    },
+  },
+  async (args) => text(buildLangPack(cfg, args)),
 );
 
 await bootstrapNas();
