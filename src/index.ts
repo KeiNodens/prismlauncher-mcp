@@ -9,6 +9,7 @@ import {
   cloneInstance,
   createInstance,
   deleteInstance,
+  exportInstanceZip,
   getInstance,
   getInstanceSetting,
   listGroups,
@@ -17,8 +18,8 @@ import {
 } from "./instances.js";
 import { getSetting, getSettings, setSetting } from "./settings.js";
 import { checkModUpdates, listModVersions, removeMod, setModEnabled, updateMod } from "./modrinth.js";
-import { getOptions, getWorld, listWorlds, setOption } from "./worlds.js";
-import { importModpack } from "./modpack.js";
+import { getOptions, getWorld, listWorlds, setOption, copyWorld, backupWorld } from "./worlds.js";
+import { importModpack, downloadMrpack } from "./modpack.js";
 import { buildLangPack, checkLangConsistency, extractLang } from "./lang.js";
 import { addServer, listServers, removeServer } from "./servers.js";
 import { checkModUpdatesCf, importModpackCf, installModCf, listModFilesCf, loadBlocked, resolveBlockedMods, searchModsCf, updateModCf } from "./curseforge.js";
@@ -37,7 +38,7 @@ import {
 const cfg = loadConfig(process.argv.slice(2));
 migrateStateDir(cfg.dataDir);
 
-const server = new McpServer({ name: "prismlauncher-mcp", version: "0.7.0" });
+const server = new McpServer({ name: "prismlauncher-mcp", version: "0.8.0" });
 
 function text(value: unknown) {
   return {
@@ -210,6 +211,147 @@ server.registerTool(
   },
 );
 
+const INSTANCE_SETTING_KEYS = [
+  "name",
+  "InstanceType",
+  "JavaPath",
+  "AutomaticJava",
+  "OverrideJavaLocation",
+  "JvmArgs",
+  "OverrideJavaArgs",
+  "MinMemAlloc",
+  "MaxMemAlloc",
+  "OverrideMemory",
+  "LaunchWidth",
+  "LaunchHeight",
+  "OverrideWindow",
+  "ShowConsole",
+  "OverrideConsole",
+  "JoinServerOnLaunch",
+  "JoinServerOnLaunchAddress",
+  "JoinWorldOnLaunch",
+  "UseAccountForInstance",
+];
+
+server.registerTool(
+  "list_instance_settings",
+  {
+    description:
+      "Read the common per-instance settings in one call (Java path/args, memory, window, console, join-on-launch, with their Override gates). When a bridge-enabled Prism is running, values are the effective ones the app resolves; otherwise they are read from instance.cfg (absent keys report null).",
+    inputSchema: { id: z.string() },
+  },
+  async ({ id }) => {
+    const settings: Record<string, unknown> = {};
+    const probe = await tryBridge<{ value: unknown }>(cfg, "instance.settings.get", { id, key: INSTANCE_SETTING_KEYS[0] });
+    if (probe) {
+      settings[INSTANCE_SETTING_KEYS[0]] = probe.value;
+      for (const key of INSTANCE_SETTING_KEYS.slice(1)) {
+        const r = await tryBridge<{ value: unknown }>(cfg, "instance.settings.get", { id, key });
+        settings[key] = r ? r.value : null;
+      }
+      return text({ id, viaBridge: true, settings });
+    }
+    for (const key of INSTANCE_SETTING_KEYS) settings[key] = getInstanceSetting(cfg, id, key).value;
+    return text({ id, viaBridge: false, settings });
+  },
+);
+
+server.registerTool(
+  "list_javas",
+  {
+    description:
+      "List the Java installations Prism detects on this machine, with probed versions. Requires a running bridge-enabled Prism.",
+    inputSchema: {},
+  },
+  async () => {
+    // java.list probes every detected Java on the app's main thread, and a
+    // busy app (e.g. rescanning a large instance list) can queue it behind
+    // slow work; give it far more than the default 30 s bridge timeout.
+    const javas = await tryBridge(cfg, "java.list", {}, 180000);
+    if (!javas) throw new Error("no bridge-enabled Prism is running for this data dir; Java detection needs the bridge");
+    return text(javas);
+  },
+);
+
+// Minecraft's Java requirements: 1.20.5+ needs 21, 1.18-1.20.4 needs 17,
+// 1.17 needs 16, everything older runs on 8.
+function requiredJavaMajor(mcVersion: string): number {
+  const [maj = 1, min = 0, patch = 0] = mcVersion.split(".").map(Number);
+  if (maj > 1) return 21;
+  if (min > 20 || (min === 20 && patch >= 5)) return 21;
+  if (min >= 18) return 17;
+  if (min === 17) return 16;
+  return 8;
+}
+
+function javaMajor(version: string | null | undefined): number | null {
+  if (!version) return null;
+  const p = version.split(".").map(Number);
+  if (p[0] === 1) return p[1] ?? null;
+  return p[0] ?? null;
+}
+
+server.registerTool(
+  "diagnose_instance",
+  {
+    description:
+      "Launch-readiness check for an instance: resolves the effective Java (configured path and its probed version), the Java major the instance's Minecraft version requires, and the effective memory settings, then reports concrete issues and warnings. Java probing uses a running bridge-enabled Prism; without one, version checks are skipped and the report says so.",
+    inputSchema: { id: z.string() },
+  },
+  async ({ id }) => {
+    const inst = getInstance(cfg, id);
+    const issues: string[] = [];
+    const warnings: string[] = [];
+    const keys = ["JavaPath", "AutomaticJava", "OverrideJavaLocation", "JvmArgs", "OverrideJavaArgs", "MinMemAlloc", "MaxMemAlloc", "OverrideMemory"];
+    const eff: Record<string, unknown> = {};
+    let viaBridge = false;
+    for (const k of keys) {
+      const via = await tryBridge<{ value: unknown }>(cfg, "instance.settings.get", { id, key: k });
+      if (via) {
+        viaBridge = true;
+        eff[k] = via.value;
+      } else {
+        eff[k] = getInstanceSetting(cfg, id, k).value;
+      }
+    }
+    const javas = (await tryBridge<Array<{ path: string; version: string | null }>>(cfg, "java.list", {}, 180000)) ?? null;
+    const required = inst.mcVersion ? requiredJavaMajor(inst.mcVersion) : null;
+    const javaPath = String(eff.JavaPath ?? "");
+    let javaVersion: string | null = null;
+    if (javas) {
+      if (javaPath) {
+        const norm = (s: string) => s.replace(/\\/g, "/").toLowerCase();
+        const hit = javas.find((j) => norm(j.path) === norm(javaPath));
+        if (hit) javaVersion = hit.version;
+        else warnings.push(`configured JavaPath is not among the detected installations: ${javaPath}`);
+      }
+    } else {
+      warnings.push("no bridge-enabled Prism is running, so Java versions could not be probed");
+    }
+    const major = javaMajor(javaVersion);
+    if (javaPath && major !== null && required !== null && major < required)
+      issues.push(`Java ${javaVersion} is too old: Minecraft ${inst.mcVersion} needs Java ${required}+`);
+    if (javaPath && major === null && javas) warnings.push(`could not determine the version of the configured Java: ${javaPath}`);
+    const maxMem = Number(eff.MaxMemAlloc ?? 0);
+    if (maxMem > 0 && maxMem < 1024) warnings.push(`MaxMemAlloc is ${maxMem} MB; most modded packs need at least 2048 MB`);
+    return text({
+      id,
+      viaBridge,
+      minecraft: { version: inst.mcVersion, loader: inst.loader },
+      java: {
+        path: javaPath || null,
+        automatic: eff.AutomaticJava === true || eff.AutomaticJava === "true",
+        version: javaVersion,
+        requiredMajor: required,
+        detected: javas,
+      },
+      memory: { min: eff.MinMemAlloc, max: eff.MaxMemAlloc, override: eff.OverrideMemory },
+      issues,
+      warnings,
+    });
+  },
+);
+
 // ---- global settings (prismlauncher.cfg) ----
 server.registerTool(
   "get_settings",
@@ -326,6 +468,58 @@ server.registerTool(
   async ({ instance, file }) => text(await updateMod(cfg, instance, file)),
 );
 
+server.registerTool(
+  "update_all_mods",
+  {
+    description:
+      "Update every mod in an instance that has a newer matching release, across Modrinth-managed and CurseForge-managed mods. Reports what was updated, how many were already current, and what failed. Prerelease-only updates are never applied silently (the same rule as check_mod_updates), and distribution-blocked CurseForge files are reported instead of attempted.",
+    inputSchema: { instance: z.string() },
+  },
+  async ({ instance }) => {
+    const updated: unknown[] = [];
+    const failed: unknown[] = [];
+    let upToDate = 0;
+    const report = (await checkModUpdates(cfg, instance)) as Array<Record<string, unknown>>;
+    for (const entry of report) {
+      if (!entry.known) continue;
+      if (!entry.updateAvailable) {
+        upToDate++;
+        continue;
+      }
+      try {
+        updated.push(await updateMod(cfg, instance, String(entry.file)));
+      } catch (e) {
+        failed.push({ file: entry.file, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    try {
+      const cf = (await checkModUpdatesCf(cfg, instance)) as {
+        upToDate: number;
+        updates: Array<Record<string, unknown>>;
+      };
+      upToDate += cf.upToDate;
+      for (const u of cf.updates) {
+        if (u.problem) {
+          failed.push({ slug: u.slug, error: String(u.problem) });
+          continue;
+        }
+        if (u.blocked) {
+          failed.push({ slug: u.slug, error: "latest CurseForge file is distribution-blocked" });
+          continue;
+        }
+        try {
+          updated.push(await updateModCf(cfg, instance, String(u.slug ?? u.projectId)));
+        } catch (e) {
+          failed.push({ slug: u.slug, error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+    } catch {
+      // No CurseForge-managed mods (or no API key): the Modrinth side stands.
+    }
+    return text({ instance, updated, upToDate, failed });
+  },
+);
+
 // ---- worlds & options ----
 server.registerTool(
   "list_worlds",
@@ -343,6 +537,25 @@ server.registerTool(
     inputSchema: { instance: z.string(), world: z.string() },
   },
   async ({ instance, world }) => text(await getWorld(cfg, instance, world)),
+);
+
+server.registerTool(
+  "copy_world",
+  {
+    description: "Copy a world folder inside an instance under a new name (the copy's session.lock is dropped).",
+    inputSchema: { instance: z.string(), world: z.string(), newName: z.string() },
+  },
+  async ({ instance, world, newName }) => text(copyWorld(cfg, instance, world, newName)),
+);
+
+server.registerTool(
+  "backup_world",
+  {
+    description:
+      "Zip a world folder into the server's backups/worlds directory (under the data dir's prismlauncher-mcp folder) and return the backup path.",
+    inputSchema: { instance: z.string(), world: z.string() },
+  },
+  async ({ instance, world }) => text(backupWorld(cfg, instance, world)),
 );
 
 server.registerTool(
@@ -374,6 +587,92 @@ server.registerTool(
   async ({ path: p, name }) => text(await importModpack(cfg, p, name)),
 );
 
+server.registerTool(
+  "install_modpack",
+  {
+    description:
+      "Install a Modrinth modpack by project id or slug. When a bridge-enabled Prism is running, the app installs the pack itself and registers it as a managed pack (so Prism can check it for updates later). Otherwise the .mrpack is downloaded and imported at the file level. Packs whose client files include optional mods are refused by the bridge in headless mode (they need a dialog); the file-level fallback handles those.",
+    inputSchema: { project: z.string(), versionId: z.string().optional(), name: z.string().optional() },
+  },
+  async ({ project, versionId, name }) => {
+    if (!cfg.readOnly) {
+      const created = await tryBridge<{ taskId: string }>(cfg, "pack.create", { projectId: project, versionId, name });
+      if (created?.taskId) {
+        const deadline = Date.now() + 600000;
+        let state = "working";
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const tasks = await tryBridge<{ id: string; state: string; failReason?: string }[]>(cfg, "task.list", {});
+          const mine = tasks?.find((t) => t.id === created.taskId);
+          if (!mine) break;
+          state = mine.state;
+          if (state === "succeeded") {
+            if (name) {
+              try {
+                return text({ ...getInstance(cfg, name), viaBridge: true, taskId: created.taskId });
+              } catch {
+                /* fall through to the generic report */
+              }
+            }
+            return text({ installed: project, viaBridge: true, taskId: created.taskId, state });
+          }
+          if (state === "failed" || state === "aborted") {
+            throw new Error(`bridge pack install ${state}: ${mine.failReason ?? "unknown"}`);
+          }
+        }
+        return text({ installed: project, viaBridge: true, taskId: created.taskId, state, note: "install still running in Prism; check list_instances shortly" });
+      }
+    }
+    const dl = await downloadMrpack(cfg, project, versionId);
+    const result = await importModpack(cfg, dl.file, name);
+    return text({ ...result, downloadedVersion: dl.versionNumber });
+  },
+);
+
+server.registerTool(
+  "export_instance",
+  {
+    description:
+      "Export an instance as a Modrinth .mrpack (default) or a plain zip, into the data dir's prismlauncher-mcp/exports folder unless output is given. The mrpack format requires a running bridge-enabled Prism (the app resolves mod files against Modrinth); the zip format falls back to a file-level archive when no bridge is up. Logs, crash reports and backups are excluded either way.",
+    inputSchema: {
+      id: z.string(),
+      format: z.enum(["mrpack", "zip"]).optional(),
+      name: z.string().optional(),
+      version: z.string().optional(),
+      output: z.string().optional(),
+    },
+  },
+  async ({ id, format, name, version, output }) => {
+    const fmt = format ?? "mrpack";
+    if (!cfg.readOnly) {
+      const started = await tryBridge<{ taskId: string; output: string; format: string }>(cfg, "instance.export", {
+        id,
+        format: fmt,
+        name,
+        version,
+        output,
+      });
+      if (started?.taskId) {
+        const deadline = Date.now() + 600000;
+        let state = "working";
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const tasks = await tryBridge<{ id: string; state: string; failReason?: string }[]>(cfg, "task.list", {});
+          const mine = tasks?.find((t) => t.id === started.taskId);
+          if (!mine) break;
+          state = mine.state;
+          if (state === "succeeded") return text({ id, ...started, viaBridge: true, state });
+          if (state === "failed" || state === "aborted")
+            throw new Error(`bridge export ${state}: ${mine.failReason ?? "unknown"}`);
+        }
+        return text({ id, ...started, viaBridge: true, state, note: "export still running in Prism; the file appears at the output path when it finishes" });
+      }
+    }
+    if (fmt === "zip") return text(exportInstanceZip(cfg, id, output));
+    throw new Error("mrpack export needs a running bridge-enabled Prism for this data dir");
+  },
+);
+
 // ---- agent bridge (Phase 2) ----
 server.registerTool(
   "bridge_status",
@@ -398,10 +697,12 @@ server.registerTool(
     },
   },
   async ({ id, ...opts }) => {
-    // Route plain launches through a running bridge-enabled Prism so the
-    // game is owned by that process instead of spawning a second launcher.
-    if (!opts.world && !opts.profile && !opts.offline && !cfg.readOnly) {
-      const via = await tryBridge(cfg, "launch", { id, server: opts.server });
+    // Route launches through a running bridge-enabled Prism so the game is
+    // owned by that process instead of spawning a second launcher. The
+    // bridge launch accepts server/world targets; profile and offline
+    // launches keep the CLI route, whose semantics differ slightly.
+    if (!opts.profile && !opts.offline && !cfg.readOnly) {
+      const via = await tryBridge(cfg, "launch", { id, server: opts.server, world: opts.world });
       if (via) return text({ launched: id, viaBridge: true, bridge: via, note: "launched by the running Prism; poll get_instance_status / wait_for_event" });
     }
     return text(launchInstance(cfg, id, opts));

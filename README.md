@@ -73,14 +73,19 @@ install location (`%LOCALAPPDATA%\Programs\PrismLauncher`) or on `PATH`.
 
 **Instances:** `list_instances`, `get_instance`, `create_instance`,
 `clone_instance`, `delete_instance`, `set_instance_setting`,
-`get_instance_setting`, `list_groups`,
-`list_versions`
+`get_instance_setting`, `list_instance_settings` (the common keys with
+their effective values in one call), `list_groups`,
+`list_versions`, `export_instance` (.mrpack via the bridge, or a plain zip),
+`diagnose_instance` (launch-readiness: effective Java vs. the version the
+instance's Minecraft requires, memory, concrete issues), `list_javas`
 
 **Settings:** `get_settings`, `set_setting` (global `prismlauncher.cfg`)
 
 **Mods (Modrinth):** `search_mods`, `install_mod` (required dependencies are
 installed recursively and reported; optional ones are only reported),
 `list_mods`, `remove_mod`, `set_mod_enabled`, `check_mod_updates`, `update_mod`,
+`update_all_mods` (every mod with a newer matching release, Modrinth and
+CurseForge; prerelease-only updates are never applied silently),
 `list_mod_versions` (browse versions; pass a version id to `install_mod` to
 pin or roll back). Required dependencies are installed recursively with
 deduplication: an identical file already present is not downloaded again,
@@ -97,10 +102,14 @@ user-downloaded files), `check_mod_updates_cf`, `update_mod_cf`. Uses the user's
 
 **Modpacks:** `import_modpack` (.mrpack: instance creation from the pack's
 declared dependencies, sha1-verified downloads, overrides extraction),
+`install_modpack` (by Modrinth project id: installed by the app itself as a
+managed pack when the bridge is up, so Prism can check it for updates;
+otherwise downloaded and imported at the file level),
 `import_modpack_cf` (CurseForge zip: instance from the manifest, every
 required file installed under the same blocked policy, overrides extracted)
 
-**Worlds & options:** `list_worlds`, `get_world` (level.dat), `get_options`,
+**Worlds & options:** `list_worlds`, `get_world` (level.dat), `copy_world`,
+`backup_world` (zip into the server's backups), `get_options`,
 `set_option` (options.txt)
 
 **Servers:** `list_servers`, `add_server`, `remove_server` (servers.dat,
@@ -120,7 +129,7 @@ For AI agents: [docs/agent-guide.md](docs/agent-guide.md) (operating rules, work
 
 ## Status
 
-v0.7.0 — Phase 1 (file-level operation) is implemented and verified,
+v0.8.0 — Phase 1 (file-level operation) is implemented and verified,
 including the end-to-end demo (create instance → install mod → launch →
 title-screen screenshot), dependency-aware installs from Modrinth and
 CurseForge, update checks, modpack import (.mrpack and CurseForge zip),
@@ -130,7 +139,10 @@ data directory, create/launch/stop/set_setting route through the live app
 (see `bridge_status`). v0.7.0 extends bridge routing to per-instance
 settings (`set_instance_setting`, plus the new `get_instance_setting`),
 so Java arguments and memory limits can be changed safely while Prism
-is running. A repeatable smoke
+is running. v0.8.0 adds `list_instance_settings`, `export_instance`,
+`install_modpack`, `update_all_mods`, world copy/backup, and the
+Java tooling (`list_javas`, `diagnose_instance`) on bridge v1.3, which
+also accepts a single-player world as a launch target. A repeatable smoke
 test lives in `scripts/smoke.mjs`.
 
 ## License

@@ -5,7 +5,7 @@
 This document is written for AI agents that will call this MCP server. It
 states the operating contract precisely: how to connect, which rules to
 follow, and what every tool does. The schemas below were generated from the
-running server (v0.7.0, 46 tools).
+running server (v0.8.0, 54 tools).
 
 ## What this server is
 
@@ -19,7 +19,11 @@ running server (v0.7.0, 46 tools).
   same data directory, `create_instance`, `launch_instance`, `stop_instance`,
   `set_setting`, and the instance settings tools (`set_instance_setting`,
   `get_instance_setting`, v0.7.0) are routed through the live app instead of
-  files, and
+  files. v0.8.0 routes pack installs by project id (`install_modpack`) and
+  instance exports (`export_instance`) through the app as managed-pack /
+  export tasks, adds bridge-backed Java detection (`list_javas`,
+  `diagnose_instance`), and passes single-player world targets to
+  `launch_instance` through the bridge as well. In every case
   the results carry `viaBridge: true`. Routing is automatic, falls back to
   the file-level implementation on any failure, and can be disabled with
   the `PRISM_BRIDGE=0` environment variable. Check availability with
@@ -101,6 +105,14 @@ running server (v0.7.0, 46 tools).
   Parameters: `id` (string, required), `newName` (string, required)
 - **delete_instance** — Delete an instance directory. Destructive: requires confirm: true. Key files are backed up first.
   Parameters: `id` (string, required), `confirm` (boolean)
+- **list_instance_settings** — Read the common per-instance settings in one call (Java path/args, memory, window, console, join-on-launch, with their Override gates). When a bridge-enabled Prism is running, values are the effective ones the app resolves; otherwise they are read from instance.cfg (absent keys report null).
+  Parameters: `id` (string, required)
+- **list_javas** — List the Java installations Prism detects on this machine, with probed versions. Requires a running bridge-enabled Prism.
+  Parameters: no parameters
+- **diagnose_instance** — Launch-readiness check for an instance: resolves the effective Java (configured path and its probed version), the Java major the instance's Minecraft version requires, and the effective memory settings, then reports concrete issues and warnings. Java probing uses a running bridge-enabled Prism; without one, version checks are skipped and the report says so.
+  Parameters: `id` (string, required)
+- **export_instance** — Export an instance as a Modrinth .mrpack (default) or a plain zip, into the data dir's prismlauncher-mcp/exports folder unless output is given. The mrpack format requires a running bridge-enabled Prism (the app resolves mod files against Modrinth); the zip format falls back to a file-level archive when no bridge is up. Logs, crash reports and backups are excluded either way.
+  Parameters: `id` (string, required), `format` (mrpack|zip), `name` (string), `version` (string), `output` (string)
 - **get_instance_setting** — Read one key from an instance's settings. When a bridge-enabled Prism is running, reports the effective value the app resolves (instance override when its gate is on, otherwise the global value); otherwise reads instance.cfg [General] directly and reports null when the key is absent there.
   Parameters: `id` (string, required), `key` (string, required)
 - **set_instance_setting** — Set one key in an instance's settings. When a bridge-enabled Prism is running, the write goes through the app (a file-level write could be overwritten when the app saves on exit) and is verified by reading it back; otherwise instance.cfg is edited directly (backed up and audit-logged). Java and memory tweaks need their Override gate set too, e.g. OverrideJavaArgs=true with JvmArgs, OverrideMemory=true with MinMemAlloc/MaxMemAlloc, OverrideJavaLocation=true with JavaPath.
@@ -135,6 +147,8 @@ running server (v0.7.0, 46 tools).
   Parameters: `instance` (string, required)
 - **update_mod** — Update one mod jar to the latest Modrinth version matching the instance (the old jar is backed up before removal). Fails clearly when the file is unknown to Modrinth.
   Parameters: `instance` (string, required), `file` (string, required)
+- **update_all_mods** — Update every mod in an instance that has a newer matching release, across Modrinth-managed and CurseForge-managed mods. Reports what was updated, how many were already current, and what failed. Prerelease-only updates are never applied silently (the same rule as check_mod_updates), and distribution-blocked CurseForge files are reported instead of attempted.
+  Parameters: `instance` (string, required)
 
 ### Mods - CurseForge
 
@@ -157,6 +171,8 @@ running server (v0.7.0, 46 tools).
 
 - **import_modpack** — Import a Modrinth .mrpack file: creates the instance from the pack's declared Minecraft/loader versions, downloads every client file with sha1 verification, and extracts overrides.
   Parameters: `path` (string, required), `name` (string)
+- **install_modpack** — Install a Modrinth modpack by project id or slug. When a bridge-enabled Prism is running, the app installs the pack itself and registers it as a managed pack (so Prism can check it for updates later). Otherwise the .mrpack is downloaded and imported at the file level. Packs whose client files include optional mods are refused by the bridge in headless mode (they need a dialog); the file-level fallback handles those.
+  Parameters: `project` (string, required), `versionId` (string), `name` (string)
 - **import_modpack_cf** — Import a CurseForge modpack zip (manifest.json format): creates the instance from the pack's Minecraft/loader declaration, installs every required file (blocked files are reported and recorded for manual download, per the blocked policy), and extracts overrides. Optional (required: false) files are reported, not installed.
   Parameters: `zipPath` (string, required), `name` (string)
 
@@ -165,6 +181,10 @@ running server (v0.7.0, 46 tools).
 - **list_worlds** — List single-player worlds (saves/) with level.dat info: name, version, game mode, seed, last played.
   Parameters: `instance` (string, required)
 - **get_world** — Get one world's level.dat info by folder name.
+- **copy_world** — Copy a world folder inside an instance under a new name (the copy's session.lock is dropped).
+  Parameters: `instance` (string, required), `world` (string, required), `newName` (string, required)
+- **backup_world** — Zip a world folder into the server's backups/worlds directory (under the data dir's prismlauncher-mcp folder) and return the backup path.
+  Parameters: `instance` (string, required), `world` (string, required)
   Parameters: `instance` (string, required), `world` (string, required)
 - **get_options** — Read the instance's minecraft/options.txt as key:value pairs.
   Parameters: `instance` (string, required)

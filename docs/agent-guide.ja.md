@@ -4,7 +4,7 @@
 
 この文書は、この MCP サーバを呼び出す AI エージェントに向けて書かれています。
 接続方法、守るべき運用ルール、全ツールの仕様を正確に記します。以下のスキーマは
-稼働中サーバ（v0.7.0、全46ツール）から生成したものです。
+稼働中サーバ（v0.8.0、全54ツール）から生成したものです。
 
 ## このサーバについて
 
@@ -17,6 +17,10 @@
   `create_instance` / `launch_instance` / `stop_instance` / `set_setting` と
   インスタンス個別設定（`set_instance_setting` / `get_instance_setting`、v0.7.0）は
   ファイルではなく起動中のアプリ経由で実行され、結果に `viaBridge: true` が付きます。
+  v0.8.0 ではプロジェクトID指定のパック導入（`install_modpack`）とインスタンスの
+  エクスポート（`export_instance`）もアプリの managed pack / エクスポートタスク経由に
+  なり、Java 検出（`list_javas`、`diagnose_instance`）がブリッジ backed に加わり、
+  `launch_instance` のシングルプレイワールド指定もブリッジ経由になりました。
   ルーティングは自動で、失敗時はファイルレベル実装にフォールバックします。
   環境変数 `PRISM_BRIDGE=0` で無効化できます。可用性は `bridge_status` で確認できます。
 
@@ -90,6 +94,14 @@
   引数: `id` (string, required), `newName` (string, required)
 - **delete_instance** — インスタンス削除（confirm必須）
   引数: `id` (string, required), `confirm` (boolean)
+- **list_instance_settings** — インスタンスの主要設定を実効値で一括取得（Java パス/引数、メモリ、ウィンドウ、コンソール、起動時ジョインと各 Override ゲート）。ブリッジ有効な Prism が起動中の場合はアプリが解決する実効値、それ以外は instance.cfg から読み、無いキーは null
+  引数: `id` (string, required)
+- **list_javas** — Prism が検出する Java 一覧（バージョン実測つき）。ブリッジ有効な Prism の起動が必須
+  引数: なし
+- **diagnose_instance** — 起動可否診断: 実効 Java（設定パスと実測バージョン）、その Minecraft が要求する Java メジャー、実効メモリを解決し、具体的な問題と警告を返す。Java の実測はブリッジ有効な Prism 経由。無ければバージョン照合をスキップし、その旨を報告する
+  引数: `id` (string, required)
+- **export_instance** — インスタンスを Modrinth .mrpack（既定）またはプレーン zip でエクスポート。出力先は既定でデータフォルダの prismlauncher-mcp/exports。.mrpack はブリッジ有効な Prism が必須（アプリが Modrinth と照合して解決）、zip はブリッジが無ければファイルレベルのアーカイブにフォールバック。ログ・クラッシュレポート・バックアップはどちらでも除外
+  引数: `id` (string, required), `format` (mrpack|zip), `name` (string), `version` (string), `output` (string)
 - **get_instance_setting** — インスタンス個別設定の取得。ブリッジ有効な Prism が起動中の場合はアプリが解決する実効値（ゲート有効時はインスタンスの上書き、無効時は全体設定の値）を返し、それ以外は instance.cfg の [General] を直接読み、キーが無ければ null を返す
   引数: `id` (string, required), `key` (string, required)
 - **set_instance_setting** — インスタンス個別設定の変更。ブリッジ有効な Prism が起動中の場合はアプリ経由で書き込み、読み戻して検証する（ファイル直書きはアプリ終了時の保存で上書きされ得るため）。それ以外は instance.cfg を直接編集（バックアップ・監査ログ付き）。Java 引数やメモリの変更には対応する Override ゲートも必要（例: JvmArgs には OverrideJavaArgs=true、MinMemAlloc/MaxMemAlloc には OverrideMemory=true、JavaPath には OverrideJavaLocation=true）
@@ -123,6 +135,8 @@
 - **check_mod_updates** — Modrinth導入分の更新チェック
   引数: `instance` (string, required)
 - **update_mod** — Modrinth導入分の更新適用
+- **update_all_mods** — 更新のある mod を全件更新（Modrinth / CurseForge 両対応）。更新したもの、最新だった数、失敗を報告。プレリリースのみの更新は勝手に適用せず、配布ブロックされた CurseForge ファイルは試行せず報告する
+  引数: `instance` (string, required)
   引数: `instance` (string, required), `file` (string, required)
 
 ### Mod - CurseForge
@@ -145,6 +159,8 @@
 ### Modpack
 
 - **import_modpack** — .mrpackの取り込み（インスタンス生成＋sha1検証DL＋overrides展開）
+- **install_modpack** — Modrinth のプロジェクトID/スラッグでパックを導入。ブリッジ有効な Prism が起動中ならアプリ自身が managed pack として導入し（後から Prism の更新チェック対象になる）、無ければ .mrpack をダウンロードしてファイルレベルで取り込む。任意 mod を含むパックはヘッドレスのブリッジでは拒否される（ダイアログが必要なため）。その場合はファイルレベルのフォールバックが処理する
+  引数: `project` (string, required), `versionId` (string), `name` (string)
   引数: `path` (string, required), `name` (string)
 - **import_modpack_cf** — CurseForge形式zipの取り込み（blocked方針は同じ）
   引数: `zipPath` (string, required), `name` (string)
@@ -154,6 +170,10 @@
 - **list_worlds** — ワールド一覧
   引数: `instance` (string, required)
 - **get_world** — ワールド詳細（level.dat）
+  引数: `instance` (string, required), `world` (string, required)
+- **copy_world** — ワールドを別名でコピー（コピー側の session.lock は除去）
+  引数: `instance` (string, required), `world` (string, required), `newName` (string, required)
+- **backup_world** — ワールドをサーバの backups/worlds（データフォルダの prismlauncher-mcp 配下）へ zip 化し、パスを返す
   引数: `instance` (string, required), `world` (string, required)
 - **get_options** — options.txtの参照
   引数: `instance` (string, required)

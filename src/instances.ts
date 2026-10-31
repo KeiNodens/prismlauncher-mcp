@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { instanceDir, instancesDir, type PrismConfig } from "./config.js";
+import AdmZip from "adm-zip";
+import { instanceDir, instancesDir, mcpHome, type PrismConfig } from "./config.js";
 import { parseIni, stringifyIni, iniGet, iniSet } from "./ini.js";
 import { fetchIndex, resolveLwjgl, resolveLoaderVersion, LOADER_UIDS } from "./meta.js";
 import { audit, backupFiles, requireConfirm, requireWritable } from "./safety.js";
@@ -232,4 +233,39 @@ export function getInstanceSetting(cfg: PrismConfig, id: string, key: string) {
   if (!fs.existsSync(cfgPath)) throw new Error(`instance not found: ${id}`);
   const ini = parseIni(fs.readFileSync(cfgPath, "utf8"));
   return { id, key, value: iniGet(ini, "General", key) ?? null };
+}
+
+// File-level plain-zip export (the no-bridge fallback of export_instance).
+// Mirrors the bridge's exclusions: logs, crash reports, backups and lock
+// files never belong in an exported instance archive.
+export function exportInstanceZip(cfg: PrismConfig, id: string, output?: string) {
+  requireWritable(cfg);
+  const root = instanceDir(cfg.dataDir, id);
+  if (!fs.existsSync(root)) throw new Error(`instance not found: ${id}`);
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const dest = output ?? path.join(mcpHome(cfg.dataDir), "exports", `${id}-${stamp}.zip`);
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  const skip = (rel: string) => {
+    const segments = rel.replace(/\\/g, "/").split("/");
+    if (segments.includes("logs") || segments.includes("crash-reports") || segments.includes("backups")) return true;
+    const name = segments[segments.length - 1];
+    return name.endsWith(".log") || name === "session.lock" || name.endsWith(".lck");
+  };
+  const zip = new AdmZip();
+  const walk = (dir: string) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, e.name);
+      const rel = path.relative(root, full);
+      if (skip(rel)) continue;
+      if (e.isDirectory()) walk(full);
+      else if (e.isFile()) {
+        const parent = path.dirname(rel);
+        zip.addLocalFile(full, parent === "." ? "" : parent.replace(/\\/g, "/"));
+      }
+    }
+  };
+  walk(root);
+  zip.writeZip(dest);
+  audit(cfg, "export_instance", id, { format: "zip", output: dest });
+  return { id, format: "zip", output: dest, viaBridge: false };
 }

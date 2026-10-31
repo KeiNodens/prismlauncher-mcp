@@ -72,13 +72,17 @@ node dist/index.js --data-dir C:\path\to\PrismLauncher-data
 
 **インスタンス:** `list_instances`, `get_instance`, `create_instance`,
 `clone_instance`, `delete_instance`, `set_instance_setting`,
-`get_instance_setting`, `list_groups`,
-`list_versions`
+`get_instance_setting`, `list_instance_settings`（主要キーの実効値を一括取得）,
+`list_groups`, `list_versions`, `export_instance`（.mrpack はブリッジ経由、
+またはプレーン zip）, `diagnose_instance`（起動可否診断: 実効 Java と
+Minecraft が要求する Java の照合、メモリ、具体的な問題点）, `list_javas`
 
 **設定:** `get_settings`, `set_setting`（全体設定 `prismlauncher.cfg`）
 
 **Mod（Modrinth）:** `search_mods`, `install_mod`, `list_mods`, `remove_mod`,
-`set_mod_enabled`, `check_mod_updates`, `update_mod`, `list_mod_versions`
+`set_mod_enabled`, `check_mod_updates`, `update_mod`, `update_all_mods`
+（更新のある mod を Modrinth / CurseForge 両方まとめて更新。プレリリースのみの
+更新は勝手に適用しません）, `list_mod_versions`
 （バージョン一覧。`install_mod` にバージョンIDを渡すと固定・巻き戻しが可能）。
 必須依存は再帰的に導入され、重複は排除されます（同一ファイルが既にあれば再ダウンロードしない）。
 親同士で相容れないバージョン固定があった場合は報告され、作者が宣言した非互換 mod は
@@ -93,11 +97,15 @@ node dist/index.js --data-dir C:\path\to\PrismLauncher-data
 `FlameKeyOverride` 設定から読みます。
 
 **Modpack:** `import_modpack`（.mrpack: パックの依存宣言からインスタンスを生成し、
-sha1 検証付きでダウンロード、overrides を展開）, `import_modpack_cf`
+sha1 検証付きでダウンロード、overrides を展開）, `install_modpack`
+（Modrinth のプロジェクトID指定。ブリッジ稼働時はアプリ自身が managed pack として
+導入するので、後から Prism の更新チェック対象になります。ブリッジが無ければ
+.mrpack をダウンロードしてファイルレベルで取り込み）, `import_modpack_cf`
 （CurseForge 形式 zip: manifest からインスタンスを生成し、必須ファイルを blocked と
 同じ方針で全数導入、overrides を展開）
 
-**ワールドと設定ファイル:** `list_worlds`, `get_world`（level.dat）, `get_options`,
+**ワールドと設定ファイル:** `list_worlds`, `get_world`（level.dat）, `copy_world`,
+`backup_world`（サーバの backups へ zip 化）, `get_options`,
 `set_option`（options.txt）
 
 **サーバ:** `list_servers`, `add_server`, `remove_server`（servers.dat を NBT レベルで
@@ -118,7 +126,7 @@ AIエージェント向け: [docs/agent-guide.ja.md](docs/agent-guide.ja.md)（�
 
 ## ステータス
 
-v0.7.0 — Phase 1（ファイルレベル操作）は実装・検証済みです。一気通貫デモ
+v0.8.0 — Phase 1（ファイルレベル操作）は実装・検証済みです。一気通貫デモ
 （インスタンス作成 → mod 導入 → 起動 → タイトル画面のスクリーンショット確認）、
 Modrinth / CurseForge の依存解決つき導入、更新チェック、Modpack 取り込み
 （.mrpack / CurseForge 形式）、翻訳支援ツールまでを含みます。v0.6.0 では
@@ -127,6 +135,10 @@ Phase 2 のブリッジ接続が加わり、ブリッジ有効な Prism が起�
 v0.7.0 ではインスタンス個別設定（`set_instance_setting` と新ツール
 `get_instance_setting`）もブリッジ経由になり、Prism 起動中のままで Java
 引数やメモリ上限を安全に変更できます。
+v0.8.0 では `list_instance_settings`、`export_instance`、`install_modpack`、
+`update_all_mods`、ワールドのコピー/バックアップ、Java ツール群
+（`list_javas`、`diagnose_instance`）が加わり、ブリッジ v1.3 では
+シングルプレイのワールドも起動ターゲットに指定できます。
 再現可能な
 スモークテストが `scripts/smoke.mjs` にあります。
 

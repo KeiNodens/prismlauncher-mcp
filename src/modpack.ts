@@ -113,3 +113,37 @@ export async function importModpack(cfg: PrismConfig, mrpackPath: string, nameOv
     failures,
   };
 }
+
+// Download a Modrinth pack's .mrpack by project, for the no-bridge fallback
+// of install_modpack. Picks the requested version, else the newest release
+// (then beta/alpha), and within it the primary .mrpack file.
+const MR_API = "https://api.modrinth.com/v2";
+const MR_UA = "prismlauncher-mcp/0.1.0 (https://github.com/PrismLauncher)";
+
+interface MrPackVersion {
+  id: string;
+  version_number: string;
+  version_type: string;
+  files: { filename: string; url: string; primary: boolean }[];
+}
+
+export async function downloadMrpack(cfg: PrismConfig, projectId: string, versionId?: string): Promise<{ file: string; versionNumber: string }> {
+  const res = await fetch(`${MR_API}/project/${encodeURIComponent(projectId)}/version`, { headers: { "User-Agent": MR_UA } });
+  if (!res.ok) throw new Error(`Modrinth versions -> HTTP ${res.status}`);
+  const versions = (await res.json()) as MrPackVersion[];
+  const packVersions = versions.filter((v) => v.files.some((f) => f.filename.endsWith(".mrpack")));
+  if (packVersions.length === 0) throw new Error(`project ${projectId} has no .mrpack versions`);
+  const picked = versionId
+    ? packVersions.find((v) => v.id === versionId)
+    : (packVersions.find((v) => v.version_type === "release") ?? packVersions[0]);
+  if (!picked) throw new Error(`pack version not found: ${versionId}`);
+  const file = picked.files.find((f) => f.primary && f.filename.endsWith(".mrpack")) ?? picked.files.find((f) => f.filename.endsWith(".mrpack"))!;
+  const { mcpHome } = await import("./config.js");
+  const dir = path.join(mcpHome(cfg.dataDir), "downloads");
+  fs.mkdirSync(dir, { recursive: true });
+  const dest = path.join(dir, file.filename);
+  const dl = await fetch(file.url, { headers: { "User-Agent": MR_UA } });
+  if (!dl.ok) throw new Error(`mrpack download -> HTTP ${dl.status}`);
+  fs.writeFileSync(dest, Buffer.from(await dl.arrayBuffer()));
+  return { file: dest, versionNumber: picked.version_number };
+}

@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
+import AdmZip from "adm-zip";
 import nbt from "prismarine-nbt";
-import { instanceDir, type PrismConfig } from "./config.js";
+import { instanceDir, mcpHome, type PrismConfig } from "./config.js";
 import { audit, backupFiles, requireWritable } from "./safety.js";
 
 // Read-only world inspection (level.dat) plus options.txt get/set.
@@ -109,4 +110,34 @@ export function setOption(cfg: PrismConfig, instanceId: string, key: string, val
   fs.writeFileSync(p, next.join("\n"), "utf8");
   audit(cfg, "set_option", instanceId, { key, value });
   return { key, value };
+}
+
+export function copyWorld(cfg: PrismConfig, instanceId: string, world: string, newName: string) {
+  requireWritable(cfg);
+  const src = path.join(savesDir(cfg, instanceId), world);
+  if (!fs.existsSync(path.join(src, "level.dat"))) throw new Error(`world not found: ${world}`);
+  const safe = newName.replace(/[\\/:*?"<>|]/g, "_").trim();
+  if (!safe) throw new Error("new name is empty after sanitizing");
+  const dest = path.join(savesDir(cfg, instanceId), safe);
+  if (fs.existsSync(dest)) throw new Error(`world already exists: ${safe}`);
+  fs.cpSync(src, dest, { recursive: true });
+  // The copy must not inherit a stale session lock from the source world.
+  fs.rmSync(path.join(dest, "session.lock"), { force: true });
+  audit(cfg, "copy_world", instanceId, { world, newName: safe });
+  return { instance: instanceId, world: safe, copiedFrom: world, dir: dest };
+}
+
+export function backupWorld(cfg: PrismConfig, instanceId: string, world: string) {
+  requireWritable(cfg);
+  const src = path.join(savesDir(cfg, instanceId), world);
+  if (!fs.existsSync(path.join(src, "level.dat"))) throw new Error(`world not found: ${world}`);
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const destDir = path.join(mcpHome(cfg.dataDir), "backups", "worlds");
+  fs.mkdirSync(destDir, { recursive: true });
+  const dest = path.join(destDir, `${instanceId}-${world}-${stamp}.zip`);
+  const zip = new AdmZip();
+  zip.addLocalFolder(src);
+  zip.writeZip(dest);
+  audit(cfg, "backup_world", instanceId, { world, backup: dest });
+  return { instance: instanceId, world, backup: dest };
 }
