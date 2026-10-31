@@ -18,7 +18,7 @@ import { checkModUpdates, listModVersions, removeMod, setModEnabled, updateMod }
 import { getOptions, getWorld, listWorlds, setOption } from "./worlds.js";
 import { importModpack } from "./modpack.js";
 import { buildLangPack, checkLangConsistency, extractLang } from "./lang.js";
-import { installModCf, listModFilesCf, loadBlocked, resolveBlockedMods, searchModsCf } from "./curseforge.js";
+import { importModpackCf, installModCf, listModFilesCf, loadBlocked, resolveBlockedMods, searchModsCf } from "./curseforge.js";
 import { listVersions, LOADER_UIDS } from "./meta.js";
 import { installMod, listMods, searchMods } from "./modrinth.js";
 import {
@@ -33,7 +33,7 @@ import {
 
 const cfg = loadConfig(process.argv.slice(2));
 
-const server = new McpServer({ name: "prism-mcp", version: "0.3.2" });
+const server = new McpServer({ name: "prism-mcp", version: "0.4.0" });
 
 function text(value: unknown) {
   return {
@@ -443,6 +443,16 @@ server.registerTool(
     inputSchema: { instanceId: z.string() },
   },
   async ({ instanceId }) => text(loadBlocked(cfg, instanceId)),
+);
+
+server.registerTool(
+  "import_modpack_cf",
+  {
+    description:
+      "Import a CurseForge modpack zip (manifest.json format): creates the instance from the pack's Minecraft/loader declaration, installs every required file (blocked files are reported and recorded for manual download, per the blocked policy), and extracts overrides. Optional (required: false) files are reported, not installed.",
+    inputSchema: { zipPath: z.string(), name: z.string().optional() },
+  },
+  async ({ zipPath, name }) => text(await importModpackCf(cfg, zipPath, name)),
 );
 
 server.registerTool(

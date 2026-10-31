@@ -93,7 +93,9 @@ user-downloaded files). Uses the user's own API key from Prism's
 `FlameKeyOverride` setting.
 
 **Modpacks:** `import_modpack` (.mrpack: instance creation from the pack's
-declared dependencies, sha1-verified downloads, overrides extraction)
+declared dependencies, sha1-verified downloads, overrides extraction),
+`import_modpack_cf` (CurseForge zip: instance from the manifest, every
+required file installed under the same blocked policy, overrides extracted)
 
 **Worlds & options:** `list_worlds`, `get_world` (level.dat), `get_options`,
 `set_option` (options.txt)

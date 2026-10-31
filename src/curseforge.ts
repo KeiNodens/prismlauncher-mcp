@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import AdmZip from "adm-zip";
 import fs from "node:fs";
 import path from "node:path";
 import { instanceDir, mcpHome, type PrismConfig } from "./config.js";
@@ -550,4 +551,119 @@ export async function resolveBlockedMods(
   saveBlocked(cfg, instanceId, remaining);
   audit(cfg, "resolve_blocked_mods", instanceId, { folder, resolved: resolved.map((r) => r.fileName) });
   return { resolved, remaining };
+}
+
+// ---- CurseForge modpack (.zip) import ----
+
+export interface CfManifest {
+  minecraft: { version: string; modLoaders: { id: string; primary: boolean }[] };
+  name: string;
+  version?: string;
+  files: { projectID: number; fileID: number; required: boolean }[];
+  overrides?: string;
+}
+
+// "forge-47.4.28" -> { loader: "forge", version: "47.4.28" }
+export function parseCfLoader(id: string): { loader: string; version: string } {
+  const dash = id.indexOf("-");
+  if (dash < 0) return { loader: id.toLowerCase(), version: "" };
+  return { loader: id.slice(0, dash).toLowerCase(), version: id.slice(dash + 1) };
+}
+
+export async function importModpackCf(cfg: PrismConfig, zipPath: string, nameOverride?: string) {
+  requireWritable(cfg);
+  if (!fs.existsSync(zipPath)) throw new Error(`pack zip not found: ${zipPath}`);
+  const zip = new AdmZip(zipPath);
+  const manifestEntry =
+    zip.getEntry("manifest.json") ??
+    zip.getEntries().find((e) => /(^|\/)manifest\.json$/.test(e.entryName) && !e.entryName.includes("overrides"));
+  if (!manifestEntry) throw new Error("manifest.json missing - not a CurseForge pack zip");
+  const manifest = JSON.parse(manifestEntry.getData().toString("utf8")) as CfManifest;
+  if (!manifest.minecraft?.version) throw new Error("manifest has no minecraft.version");
+
+  const primaryLoader = manifest.minecraft.modLoaders.find((l) => l.primary) ?? manifest.minecraft.modLoaders[0];
+  const parsed = primaryLoader ? parseCfLoader(primaryLoader.id) : undefined;
+  const { createInstance } = await import("./instances.js");
+  const created = await createInstance(cfg, {
+    name: nameOverride ?? manifest.name,
+    mcVersion: manifest.minecraft.version,
+    loader: parsed?.loader,
+    loaderVersion: parsed?.version || undefined,
+  });
+  const instDir = instanceDir(cfg.dataDir, created.id);
+  const mcDir = path.join(instDir, "minecraft");
+  const modsDir = path.join(mcDir, "mods");
+  fs.mkdirSync(modsDir, { recursive: true });
+
+  const out: CfInstallOutcome = {
+    installed: [],
+    blocked: [],
+    skippedOptionalDeps: [],
+    unresolvedDeps: [],
+    declaredIncompatibles: [],
+    incompatibleWarnings: [],
+    dependencyConflicts: [],
+  };
+  const ctx: CfCtx = { visited: new Map(), titles: new Map() };
+  const skippedOptional: string[] = [];
+
+  const entries = manifest.files;
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < entries.length) {
+      const entry = entries[cursor++];
+      try {
+        if (entry.required === false) {
+          skippedOptional.push(`project ${entry.projectID} (optional in pack)`);
+          continue;
+        }
+        const mod = await cfFetch<CfMod>(cfg, `/mods/${entry.projectID}`);
+        ctx.titles.set(mod.id, mod.name);
+        const file = await cfFetch<CfFile>(cfg, `/mods/${entry.projectID}/files/${entry.fileID}`);
+        if (ctx.visited.get(mod.id) === file.id) continue;
+        await installCfFile(cfg, created.id, modsDir, mod, file, out, ctx, 0);
+      } catch (e) {
+        out.unresolvedDeps.push(`project ${entry.projectID}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+
+  // Overrides: the pack's overrides folder goes into the instance minecraft dir.
+  const overridesRoot = (manifest.overrides ?? "overrides").replace(/\/$/, "");
+  let overrideFiles = 0;
+  for (const e of zip.getEntries()) {
+    if (e.isDirectory) continue;
+    if (!e.entryName.startsWith(overridesRoot + "/")) continue;
+    const rel = e.entryName.slice(overridesRoot.length + 1);
+    const dest = path.join(mcDir, ...rel.split("/"));
+    if (!dest.startsWith(mcDir)) continue; // path traversal guard
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, e.getData());
+    overrideFiles++;
+  }
+
+  const status = out.blocked.length === 0 ? "installed" : out.installed.length === 0 ? "blocked" : "partial_blocked";
+  audit(cfg, "import_modpack_cf", created.id, {
+    zip: zipPath,
+    files: entries.length,
+    installed: out.installed.length,
+    blocked: out.blocked.map((b) => b.fileName),
+    overrideFiles,
+  });
+  return {
+    instance: created.id,
+    name: manifest.name,
+    packVersion: manifest.version,
+    mcVersion: manifest.minecraft.version,
+    loader: parsed ? `${parsed.loader} ${parsed.version}` : undefined,
+    status,
+    installedCount: out.installed.length,
+    installed: out.installed,
+    blocked: out.blocked,
+    skippedOptional,
+    unresolved: out.unresolvedDeps,
+    overrideFiles,
+    ...(out.incompatibleWarnings.length ? { incompatibleWarnings: out.incompatibleWarnings } : {}),
+  };
 }

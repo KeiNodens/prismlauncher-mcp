@@ -107,3 +107,11 @@ test("readInstalledIds parses modrinth and curseforge index entries", () => {
   assert.equal(ids.get("AbCd1234")?.source, "modrinth");
   assert.equal(ids.get("248787")?.source, "curseforge");
 });
+
+import { parseCfLoader } from "../dist/curseforge.js";
+
+test("parseCfLoader splits loader id and version", () => {
+  assert.deepEqual(parseCfLoader("forge-47.4.28"), { loader: "forge", version: "47.4.28" });
+  assert.deepEqual(parseCfLoader("neoforge-21.1.200"), { loader: "neoforge", version: "21.1.200" });
+  assert.deepEqual(parseCfLoader("fabric-0.16.14"), { loader: "fabric", version: "0.16.14" });
+});
