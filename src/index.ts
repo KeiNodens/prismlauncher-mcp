@@ -18,6 +18,7 @@ import { checkModUpdates, listModVersions, removeMod, setModEnabled, updateMod }
 import { getOptions, getWorld, listWorlds, setOption } from "./worlds.js";
 import { importModpack } from "./modpack.js";
 import { buildLangPack, checkLangConsistency, extractLang } from "./lang.js";
+import { addServer, listServers, removeServer } from "./servers.js";
 import { checkModUpdatesCf, importModpackCf, installModCf, listModFilesCf, loadBlocked, resolveBlockedMods, searchModsCf, updateModCf } from "./curseforge.js";
 import { listVersions, LOADER_UIDS } from "./meta.js";
 import { installMod, listMods, searchMods } from "./modrinth.js";
@@ -33,7 +34,7 @@ import {
 
 const cfg = loadConfig(process.argv.slice(2));
 
-const server = new McpServer({ name: "prism-mcp", version: "0.4.1" });
+const server = new McpServer({ name: "prism-mcp", version: "0.4.2" });
 
 function text(value: unknown) {
   return {
@@ -352,6 +353,31 @@ server.registerTool(
   },
 );
 
+
+// ---- multiplayer servers (servers.dat) ----
+server.registerTool(
+  "list_servers",
+  { description: "List the multiplayer servers saved in the instance's servers.dat.", inputSchema: { instanceId: z.string() } },
+  async ({ instanceId }) => text(await listServers(cfg, instanceId)),
+);
+
+server.registerTool(
+  "add_server",
+  {
+    description: "Add a multiplayer server to the instance's servers.dat (created if missing). The previous file is backed up.",
+    inputSchema: { instanceId: z.string(), name: z.string(), ip: z.string() },
+  },
+  async ({ instanceId, name, ip }) => text(await addServer(cfg, instanceId, name, ip)),
+);
+
+server.registerTool(
+  "remove_server",
+  {
+    description: "Remove multiplayer server entries matching a name or ip from servers.dat. Destructive: needs confirm: true.",
+    inputSchema: { instanceId: z.string(), name: z.string().optional(), ip: z.string().optional(), confirm: z.boolean().optional() },
+  },
+  async ({ instanceId, name, ip, confirm }) => text(await removeServer(cfg, instanceId, { name, ip }, confirm)),
+);
 
 // ---- translation support (explicit invocation only; never automatic) ----
 server.registerTool(

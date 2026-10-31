@@ -123,3 +123,18 @@ test("parseCfIndex reads curseforge update entries", () => {
   assert.deepEqual(parseCfIndex(toml, "x"), { slug: "x", fileName: "x-1.0.jar", fileId: 4605078, projectId: 248787 });
   assert.equal(parseCfIndex('filename = "y.jar"\n', "y"), undefined);
 });
+
+import { serversFromTree, addToTree, removeFromTree } from "../dist/servers.js";
+
+test("servers tree add/list/remove round trip", () => {
+  const tree = { type: "compound", name: "", value: { servers: { type: "list", value: { type: "compound", value: [] } } } };
+  addToTree(tree, "Alpha", "mc.example.com");
+  addToTree(tree, "Beta", "192.0.2.1:25565");
+  assert.deepEqual(serversFromTree(tree), [
+    { name: "Alpha", ip: "mc.example.com" },
+    { name: "Beta", ip: "192.0.2.1:25565" },
+  ]);
+  assert.equal(removeFromTree(tree, { name: "Alpha" }), 1);
+  assert.deepEqual(serversFromTree(tree), [{ name: "Beta", ip: "192.0.2.1:25565" }]);
+  assert.equal(removeFromTree(tree, { ip: "203.0.113.9" }), 0);
+});

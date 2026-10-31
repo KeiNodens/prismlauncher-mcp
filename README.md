@@ -100,6 +100,9 @@ required file installed under the same blocked policy, overrides extracted)
 **Worlds & options:** `list_worlds`, `get_world` (level.dat), `get_options`,
 `set_option` (options.txt)
 
+**Servers:** `list_servers`, `add_server`, `remove_server` (servers.dat,
+NBT-level edits that preserve unknown fields on existing entries)
+
 **Game:** `launch_instance`, `get_instance_status`, `tail_log`,
 
 **Translation (explicit only):** `extract_lang`, `check_lang_consistency`, `build_lang_pack` — see the Translation support section above.

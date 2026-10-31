@@ -1,6 +1,6 @@
 {
   "name": "prism-mcp",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "MCP server for Prism Launcher: file-level instance/mod/world management (Layer 1 of the prism project)",
   "type": "module",
   "license": "MIT",
