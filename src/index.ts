@@ -19,6 +19,7 @@ import {
 import { getSetting, getSettings, setSetting } from "./settings.js";
 import { checkModUpdates, listModVersions, removeMod, setModEnabled, updateMod } from "./modrinth.js";
 import { getOptions, getWorld, listWorlds, setOption, copyWorld, backupWorld } from "./worlds.js";
+import { crossCheckMods, dedupeMod } from "./crosscheck.js";
 import { importModpack, downloadMrpack } from "./modpack.js";
 import { buildLangPack, checkLangConsistency, extractLang } from "./lang.js";
 import { addServer, listServers, removeServer } from "./servers.js";
@@ -38,7 +39,7 @@ import {
 const cfg = loadConfig(process.argv.slice(2));
 migrateStateDir(cfg.dataDir);
 
-const server = new McpServer({ name: "prismlauncher-mcp", version: "0.8.0" });
+const server = new McpServer({ name: "prismlauncher-mcp", version: "0.9.0" });
 
 function text(value: unknown) {
   return {
@@ -466,6 +467,31 @@ server.registerTool(
     inputSchema: { instance: z.string(), file: z.string() },
   },
   async ({ instance, file }) => text(await updateMod(cfg, instance, file)),
+);
+
+server.registerTool(
+  "cross_check_mods",
+  {
+    description:
+      "Cross-source inventory of an instance's mods: joins the Modrinth view (jars identified by sha1) with the CurseForge view (packwiz .index entries) by project slug, and reports mods installed from BOTH sources as two different files (true duplicates), single files both sources recognize (dualTracked), mods installed from one source that also exist on the other, single-source mods, and jars neither source could identify. Matching is by slug only.",
+    inputSchema: { instance: z.string() },
+  },
+  async ({ instance }) => text(await crossCheckMods(cfg, instance)),
+);
+
+server.registerTool(
+  "dedupe_mod",
+  {
+    description:
+      "Resolve a true cross-source duplicate (a mod installed from both Modrinth and CurseForge, as reported by cross_check_mods): removes the copy from the source you do NOT keep (jar plus its packwiz index entry; the jar is backed up first, per the server's safety rules). Destructive: requires confirm: true.",
+    inputSchema: {
+      instance: z.string(),
+      slug: z.string(),
+      keep: z.enum(["modrinth", "curseforge"]),
+      confirm: z.boolean().optional(),
+    },
+  },
+  async ({ instance, slug, keep, confirm }) => text(await dedupeMod(cfg, instance, slug, keep, confirm)),
 );
 
 server.registerTool(

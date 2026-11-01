@@ -148,6 +148,8 @@ running server (v0.8.0, 54 tools).
 - **update_mod** — Update one mod jar to the latest Modrinth version matching the instance (the old jar is backed up before removal). Fails clearly when the file is unknown to Modrinth.
   Parameters: `instance` (string, required), `file` (string, required)
 - **update_all_mods** — Update every mod in an instance that has a newer matching release, across Modrinth-managed and CurseForge-managed mods. Reports what was updated, how many were already current, and what failed. Prerelease-only updates are never applied silently (the same rule as check_mod_updates), and distribution-blocked CurseForge files are reported instead of attempted.
+- **cross_check_mods** — Cross-source inventory: joins the Modrinth view (jars by sha1) with the CurseForge view (packwiz .index) by project slug. Reports bothInstalled (two different files = true duplicates), dualTracked (one file both sources recognize), availableOnBoth (installed from one source, also published on the other), single-source lists, and unknownJars. Side effect: merges slug ↔ project-id pairs into `<dataDir>/prismlauncher-mcp/crossrefs.json`, which the bridge fork's mod search reads to mark cross-source installs as installed.
+- **dedupe_mod** — For a slug reported as bothInstalled by cross_check_mods, removes the copy from the source NOT named by `keep` (jar + packwiz index entry; the jar is backed up first). Destructive: requires confirm: true. Refuses dualTracked slugs (only one file exists).
   Parameters: `instance` (string, required)
 
 ### Mods - CurseForge

@@ -92,6 +92,15 @@ deduplication: an identical file already present is not downloaded again,
 conflicting version pins between parents are reported, and author-declared
 incompatible mods are checked against the instance and warned about
 
+**Cross-source:** `cross_check_mods` (joins the Modrinth and CurseForge
+views of an instance by project slug: true duplicates installed from both
+sources, single files both sources recognize, mods that also exist on the
+other platform, and unidentified jars; also records slug ↔ project-id
+pairs in `<dataDir>/prismlauncher-mcp/crossrefs.json`, which the bridge
+fork's mod search uses to mark cross-source installs as installed),
+`dedupe_mod` (removes the copy from one source of a true duplicate,
+keeping the other; backed up first)
+
 **CurseForge:** `search_mods_cf`, `list_mod_files_cf` (browse files; pass a
 file id to `install_mod_cf` to pin or roll back), `install_mod_cf` (required dependencies
 recursively; files whose authors disabled third-party distribution come back
@@ -142,7 +151,8 @@ so Java arguments and memory limits can be changed safely while Prism
 is running. v0.8.0 adds `list_instance_settings`, `export_instance`,
 `install_modpack`, `update_all_mods`, world copy/backup, and the
 Java tooling (`list_javas`, `diagnose_instance`) on bridge v1.3, which
-also accepts a single-player world as a launch target. A repeatable smoke
+also accepts a single-player world as a launch target. v0.9.0 adds the
+cross-source tools (`cross_check_mods`, `dedupe_mod`). A repeatable smoke
 test lives in `scripts/smoke.mjs`.
 
 ## License

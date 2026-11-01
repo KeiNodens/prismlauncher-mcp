@@ -88,6 +88,14 @@ Minecraft が要求する Java の照合、メモリ、具体的な問題点）,
 親同士で相容れないバージョン固定があった場合は報告され、作者が宣言した非互換 mod は
 インスタンス内と照合して警告されます。任意依存は導入されず報告のみです。
 
+**クロスソース:** `cross_check_mods`（Modrinth の所持リストと CurseForge の
+所持リストをプロジェクトのスラッグで突き合わせ。両方から入っている真の重複、
+両ソースが認識する単一ファイル、もう片方のプラットフォームにも存在する mod、
+どちらでも特定できない jar を分類して報告。あわせて slug ⇔ 両プロジェクトIDの
+対応表を `<dataDir>/prismlauncher-mcp/crossrefs.json` に記録し、フォーク版
+Prism の mod 検索がクロスソースの導入済み表示に使います）,
+`dedupe_mod`（真の重複について、残す側を指定して他方のコピーを除去。除去前にバックアップ）
+
 **CurseForge:** `search_mods_cf`, `list_mod_files_cf`（ファイル一覧。`install_mod_cf` に
 ファイルIDを渡すと固定・巻き戻しが可能）, `install_mod_cf`（必須依存は再帰導入。
 作者が第三者配布を無効化したファイルは `blocked` として、mod ページの URL とともに
@@ -139,6 +147,7 @@ v0.8.0 では `list_instance_settings`、`export_instance`、`install_modpack`�
 `update_all_mods`、ワールドのコピー/バックアップ、Java ツール群
 （`list_javas`、`diagnose_instance`）が加わり、ブリッジ v1.3 では
 シングルプレイのワールドも起動ターゲットに指定できます。
+v0.9.0 ではクロスソース系ツール（`cross_check_mods`、`dedupe_mod`）が加わりました。
 再現可能な
 スモークテストが `scripts/smoke.mjs` にあります。
 
