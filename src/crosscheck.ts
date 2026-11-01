@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { instanceDir, type PrismConfig } from "./config.js";
-import { readCfIndexEntries, searchModsCf } from "./curseforge.js";
+import { getCfModsByIds, lookupCfFingerprints, readCfIndexEntries, searchModsCf } from "./curseforge.js";
 import { removeMod } from "./modrinth.js";
 import { requireConfirm, requireWritable } from "./safety.js";
 
@@ -43,7 +43,7 @@ export interface CrossModEntry {
   slug: string;
   name?: string;
   modrinth?: { projectId: string; files: { file: string; version?: string }[] };
-  curseforge?: { projectId: number; file?: string; fileId?: number };
+  curseforge?: { projectId: number; file?: string; fileId?: number; identifiedBy?: "index" | "fingerprint" };
 }
 
 export async function crossCheckMods(cfg: PrismConfig, instanceId: string) {
@@ -94,9 +94,36 @@ export async function crossCheckMods(cfg: PrismConfig, instanceId: string) {
       : fs.existsSync(path.join(dir, e.fileName + ".disabled"))
         ? e.fileName + ".disabled"
         : e.fileName;
-    cfBySlug.set(e.slug, { projectId: e.projectId, file: onDisk, fileId: e.fileId });
+    cfBySlug.set(e.slug, { projectId: e.projectId, file: onDisk, fileId: e.fileId, identifiedBy: "index" });
     knownFiles.add(onDisk);
     knownFiles.add(e.fileName);
+  }
+
+  // Jars neither view knows yet may still be CurseForge files bundled in a
+  // modpack (no index entry). Identify them by fingerprint and add them to
+  // the CurseForge side; their slug comes from the mod record.
+  let fingerprintedJars = 0;
+  try {
+    const unknownSoFar = jars.filter((j) => !knownFiles.has(j));
+    if (unknownSoFar.length > 0) {
+      const hits = await lookupCfFingerprints(cfg, dir, unknownSoFar);
+      if (hits.length > 0) {
+        const mods = await getCfModsByIds(cfg, [...new Set(hits.map((h) => h.modId))]);
+        const byId = new Map(mods.map((m) => [m.id, m]));
+        for (const hit of hits) {
+          const mod = byId.get(hit.modId);
+          if (!mod) continue;
+          fingerprintedJars++;
+          knownFiles.add(hit.file);
+          const existing = cfBySlug.get(mod.slug);
+          if (!existing) {
+            cfBySlug.set(mod.slug, { projectId: hit.modId, file: hit.file, fileId: hit.fileId, identifiedBy: "fingerprint" });
+          }
+        }
+      }
+    }
+  } catch {
+    // No API key or endpoint trouble: fingerprinting is best-effort.
   }
 
   const bothInstalled: CrossModEntry[] = [];
@@ -200,6 +227,7 @@ export async function crossCheckMods(cfg: PrismConfig, instanceId: string) {
     curseforgeOnly,
     modrinthOnly,
     unknownJars: unknown,
+    fingerprintedJars,
     crossrefsRecorded: Object.keys(pairs).length,
     crossrefsTotal,
     note: "Matching is by project slug only. bothInstalled = two different files (true duplicates). dualTracked = one file both sources recognize. unknownJars are files neither source could identify (common for mods bundled inside modpacks).",

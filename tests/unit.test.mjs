@@ -138,3 +138,25 @@ test("servers tree add/list/remove round trip", () => {
   assert.deepEqual(serversFromTree(tree), [{ name: "Beta", ip: "192.0.2.1:25565" }]);
   assert.equal(removeFromTree(tree, { ip: "203.0.113.9" }), 0);
 });
+
+import { cfFingerprint, isCfPickDowngrade } from "../dist/curseforge.js";
+
+test("cfFingerprint matches MurmurHash2 seed-1 vectors and ignores whitespace", () => {
+  // MurmurHash2("", seed 1) finalization constant.
+  assert.equal(cfFingerprint(Buffer.alloc(0)), 0x5bd15e36);
+  const plain = cfFingerprint(Buffer.from("jei-1.20.1-forge", "utf8"));
+  const spaced = cfFingerprint(Buffer.from("jei -1.20.1\r\n-\tforge ", "utf8"));
+  assert.equal(spaced, plain);
+  assert.notEqual(cfFingerprint(Buffer.from("jei-1.20.1-quilt", "utf8")), plain);
+});
+
+test("isCfPickDowngrade only fires for a strictly older pick", () => {
+  const files = [
+    { id: 10, fileDate: "2026-01-01T00:00:00Z" },
+    { id: 11, fileDate: "2026-02-01T00:00:00Z" },
+  ];
+  assert.equal(isCfPickDowngrade(files, 11, files[0]), true);
+  assert.equal(isCfPickDowngrade(files, 10, files[1]), false);
+  assert.equal(isCfPickDowngrade(files, 10, files[0]), false);
+  assert.equal(isCfPickDowngrade(files, 99, files[0]), false);
+});

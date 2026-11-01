@@ -136,7 +136,7 @@
   引数: `instance` (string, required)
 - **update_mod** — Modrinth導入分の更新適用
 - **update_all_mods** — 更新のある mod を全件更新（Modrinth / CurseForge 両対応）。更新したもの、最新だった数、失敗を報告。プレリリースのみの更新は勝手に適用せず、配布ブロックされた CurseForge ファイルは試行せず報告する
-- **cross_check_mods** — クロスソースの所持照合。Modrinth の見方（jar の sha1）と CurseForge の見方（packwiz .index）をプロジェクトのスラッグで突き合わせる。bothInstalled（別ファイル2本＝真の重複）、dualTracked（両ソースが認識する1ファイル）、availableOnBoth（片方から導入済みでもう片方にも存在）、片方のみ、特定不能 jar を報告。副産物として slug ⇔ 両プロジェクトIDの対応を `<dataDir>/prismlauncher-mcp/crossrefs.json` にマージ保存し、フォーク版 Prism の検索画面のクロスソース導入済み表示がこれを読む
+- **cross_check_mods** — クロスソースの所持照合。Modrinth の見方（jar の sha1）と CurseForge の見方（packwiz .index）をプロジェクトのスラッグで突き合わせる。bothInstalled（別ファイル2本＝真の重複）、dualTracked（両ソースが認識する1ファイル）、availableOnBoth（片方から導入済みでもう片方にも存在）、片方のみ、特定不能 jar を報告。索引の無い jar は MurmurHash2 フィンガープリントでも照合し、CurseForge ファイルと特定できれば identifiedBy: "fingerprint" 付きで取り込む（modpack 同梱対策）。副産物として slug ⇔ 両プロジェクトIDの対応を `<dataDir>/prismlauncher-mcp/crossrefs.json` にマージ保存し、フォーク版 Prism の検索画面のクロスソース導入済み表示がこれを読む
 - **dedupe_mod** — cross_check_mods で bothInstalled と出た slug について、`keep` で指定しなかった側のコピーを除去（jar＋packwiz 索引、jar は事前バックアップ）。破壊的操作のため confirm: true 必須。dualTracked（ファイルが1本だけ）の slug は拒否する
   引数: `instance` (string, required)
   引数: `instance` (string, required), `file` (string, required)
@@ -153,7 +153,7 @@
   引数: `instanceId` (string, required)
 - **resolve_blocked_mods** — 手動DLされたファイルをsha1照合して配置
   引数: `instanceId` (string, required), `folder` (string, required)
-- **check_mod_updates_cf** — CurseForge導入分の更新チェック
+- **check_mod_updates_cf** — CurseForge導入分の更新チェック。索引管理分に加え、フィンガープリントで特定できた未管理 jar も対象（viaFingerprint / managed: false と表示。update_mod_cf で更新すると索引管理に移行する）。導入済みファイルより日付が新しくない候補（新しいベータ導入時に最新リリースが古い等）は更新として提示しない＝ダウングレード提案はしない
   引数: `instanceId` (string, required)
 - **update_mod_cf** — CurseForge導入分の更新適用（旧jarはバックアップして除去）
   引数: `instanceId` (string, required), `mod` (string, required)

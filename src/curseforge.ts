@@ -51,6 +51,100 @@ function readGlobalCfg(cfg: PrismConfig): GlobalCfg {
   return { flameKey: key || undefined, fallbackMrBlocked: fb === "true" };
 }
 
+async function cfPost<T>(cfg: PrismConfig, apiPath: string, bodyObj: unknown): Promise<T> {
+  const { flameKey } = readGlobalCfg(cfg);
+  if (!flameKey) {
+    throw new Error(
+      "No CurseForge API key: FlameKeyOverride in prismlauncher.cfg is empty. " +
+        "The user must set their own key (Prism Settings > APIs, or tools/setup-cf-key.ps1). " +
+        "Do not ask them to paste the key into chat.",
+    );
+  }
+  const res = await fetch(`${API}${apiPath}`, {
+    method: "POST",
+    headers: { "x-api-key": flameKey, Accept: "application/json", "Content-Type": "application/json", "User-Agent": UA },
+    body: JSON.stringify(bodyObj),
+  });
+  if (!res.ok) throw new Error(`CurseForge API HTTP ${res.status} for ${apiPath}`);
+  const body = (await res.json()) as { data: T };
+  return body.data;
+}
+
+// CurseForge's file fingerprint: MurmurHash2 (m=0x5bd1e995, r=24, seed 1)
+// over the file bytes with whitespace bytes (tab, LF, CR, space) removed.
+// The same algorithm Prism itself uses (libraries/murmur2); it identifies
+// jars that carry no packwiz index entry, e.g. mods bundled in modpacks.
+// The auto-pick prefers the newest RELEASE, so for a mod currently on a
+// newer beta/alpha file the pick can be OLDER than what is installed.
+// Proposing that as an "update" would silently downgrade the mod; treat a
+// pick that is not newer by file date as up to date instead.
+export function isCfPickDowngrade(files: CfFile[], currentFileId: number, picked: CfFile): boolean {
+  if (picked.id === currentFileId) return false;
+  const current = files.find((f) => f.id === currentFileId);
+  if (!current) return false;
+  return picked.fileDate <= current.fileDate;
+}
+
+export function cfFingerprint(buf: Buffer): number {  const M = 0x5bd1e995;
+  const bytes: number[] = [];
+  for (const b of buf) if (b !== 9 && b !== 10 && b !== 13 && b !== 32) bytes.push(b);
+  const len = bytes.length;
+  let h = (1 ^ len) >>> 0;
+  let i = 0;
+  let remaining = len;
+  while (remaining >= 4) {
+    let k = (bytes[i] | (bytes[i + 1] << 8) | (bytes[i + 2] << 16) | (bytes[i + 3] << 24)) >>> 0;
+    k = Math.imul(k, M) >>> 0;
+    k = (k ^ (k >>> 24)) >>> 0;
+    k = Math.imul(k, M) >>> 0;
+    h = Math.imul(h, M) >>> 0;
+    h = (h ^ k) >>> 0;
+    i += 4;
+    remaining -= 4;
+  }
+  if (remaining === 3) h = (h ^ (bytes[i + 2] << 16)) >>> 0;
+  if (remaining >= 2) h = (h ^ (bytes[i + 1] << 8)) >>> 0;
+  if (remaining >= 1) {
+    h = (h ^ bytes[i]) >>> 0;
+    h = Math.imul(h, M) >>> 0;
+  }
+  h = (h ^ (h >>> 13)) >>> 0;
+  h = Math.imul(h, M) >>> 0;
+  h = (h ^ (h >>> 15)) >>> 0;
+  return h >>> 0;
+}
+
+export interface CfFingerprintHit {
+  file: string;
+  modId: number;
+  fileId: number;
+}
+
+// Identify jar files (names within modsDir) as CurseForge files by
+// fingerprint. Unmatched files simply do not appear in the result.
+export async function lookupCfFingerprints(
+  cfg: PrismConfig,
+  modsDir: string,
+  fileNames: string[],
+): Promise<CfFingerprintHit[]> {
+  if (fileNames.length === 0) return [];
+  const fingerprints = fileNames.map((f) => cfFingerprint(fs.readFileSync(path.join(modsDir, f))));
+  const data = await cfPost<{ exactMatches?: { file: { id: number; modId: number; fileName: string } }[] }>(
+    cfg,
+    "/fingerprints",
+    { fingerprints },
+  );
+  const wanted = new Set(fileNames);
+  return (data.exactMatches ?? [])
+    .map((m) => ({ file: m.file.fileName, modId: m.file.modId, fileId: m.file.id }))
+    .filter((hit) => wanted.has(hit.file));
+}
+
+export async function getCfModsByIds(cfg: PrismConfig, ids: number[]): Promise<CfMod[]> {
+  if (ids.length === 0) return [];
+  return cfPost<CfMod[]>(cfg, "/mods", { modIds: ids, filterPcOnly: true });
+}
+
 async function cfFetch<T>(cfg: PrismConfig, apiPath: string): Promise<T> {
   const { flameKey } = readGlobalCfg(cfg);
   if (!flameKey) {
@@ -713,7 +807,7 @@ export async function checkModUpdatesCf(cfg: PrismConfig, instanceId: string) {
       updates.push({ slug: entry.slug, projectId: entry.projectId, problem: "no file matches this instance anymore" });
       continue;
     }
-    if (picked.id === entry.fileId) {
+    if (picked.id === entry.fileId || isCfPickDowngrade(files, entry.fileId, picked)) {
       upToDate++;
       continue;
     }
@@ -735,15 +829,75 @@ export async function checkModUpdatesCf(cfg: PrismConfig, instanceId: string) {
       blocked: isBlocked(picked),
     });
   }
-  return { instance: instanceId, checked: entries.length, upToDate, updates };
+  // Jars with no index entry (typically bundled inside modpacks) can still
+  // be identified as CurseForge files by fingerprint; check those too and
+  // flag the updates as unmanaged (update_mod_cf converts them to managed
+  // by writing an index entry when it applies the update).
+  let fingerprinted = 0;
+  try {
+    const covered = new Set(entries.map((e) => e.fileName));
+    const jars = fs.existsSync(modsDir)
+      ? fs.readdirSync(modsDir).filter((f) => (f.endsWith(".jar") || f.endsWith(".jar.disabled")) && !covered.has(f.replace(/\.disabled$/, "")))
+      : [];
+    const hits = await lookupCfFingerprints(cfg, modsDir, jars);
+    fingerprinted = hits.length;
+    if (hits.length > 0) {
+      const mods = await getCfModsByIds(cfg, [...new Set(hits.map((h) => h.modId))]);
+      const slugById = new Map(mods.map((m) => [m.id, m.slug]));
+      const nameById = new Map(mods.map((m) => [m.id, m.name]));
+      for (const hit of hits) {
+        const files = await fetchFilesFiltered(cfg, hit.modId, inst.mcVersion, inst.loader);
+        const picked = selectCfFile(files, inst.mcVersion, inst.loader);
+        if (!picked) continue;
+        if (picked.id === hit.fileId || isCfPickDowngrade(files, hit.fileId, picked)) {
+          upToDate++;
+          continue;
+        }
+        updates.push({
+          slug: slugById.get(hit.modId) ?? String(hit.modId),
+          projectId: hit.modId,
+          mod: nameById.get(hit.modId) ?? slugById.get(hit.modId) ?? String(hit.modId),
+          currentFileId: hit.fileId,
+          currentFile: hit.file,
+          latestFileId: picked.id,
+          latestFile: picked.fileName,
+          latestType: cfReleaseLabel(picked.releaseType),
+          blocked: isBlocked(picked),
+          viaFingerprint: true,
+          managed: false,
+        });
+      }
+    }
+  } catch {
+    // Fingerprinting is best-effort; the index-based result stands.
+  }
+  return { instance: instanceId, checked: entries.length, fingerprinted, upToDate, updates };
 }
 
 export async function updateModCf(cfg: PrismConfig, instanceId: string, slugOrProjectId: string) {
   requireWritable(cfg);
   const modsDir = path.join(instanceDir(cfg.dataDir, instanceId), "minecraft", "mods");
   const entries = readCfIndexEntries(modsDir);
-  const entry =
-    entries.find((e) => e.slug === slugOrProjectId) ?? entries.find((e) => String(e.projectId) === slugOrProjectId);
+  let entry = entries.find((e) => e.slug === slugOrProjectId) ?? entries.find((e) => String(e.projectId) === slugOrProjectId);
+  if (!entry) {
+    // Not index-managed: try identifying an unmanaged jar by fingerprint
+    // (modpack-bundled CurseForge files). Installing the update writes an
+    // index entry, converting the mod to managed from then on.
+    const jars = fs.existsSync(modsDir)
+      ? fs.readdirSync(modsDir).filter((f) => f.endsWith(".jar") || f.endsWith(".jar.disabled"))
+      : [];
+    const hits = await lookupCfFingerprints(cfg, modsDir, jars);
+    if (hits.length > 0) {
+      const mods = await getCfModsByIds(cfg, [...new Set(hits.map((h) => h.modId))]);
+      const slugById = new Map(mods.map((m) => [m.id, m.slug]));
+      const hit = hits.find(
+        (h) => slugById.get(h.modId) === slugOrProjectId || String(h.modId) === slugOrProjectId,
+      );
+      if (hit) {
+        entry = { slug: slugById.get(hit.modId) ?? String(hit.modId), fileName: hit.file, fileId: hit.fileId, projectId: hit.modId };
+      }
+    }
+  }
   if (!entry) throw new Error(`no CurseForge-installed mod matches: ${slugOrProjectId}`);
   const result = await installModCf(cfg, instanceId, { modId: entry.projectId });
   const newFile = result.installed.find((i) => i.file !== entry.fileName)?.file ?? result.installed[0]?.file;

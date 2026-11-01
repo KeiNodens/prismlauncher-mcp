@@ -39,7 +39,7 @@ import {
 const cfg = loadConfig(process.argv.slice(2));
 migrateStateDir(cfg.dataDir);
 
-const server = new McpServer({ name: "prismlauncher-mcp", version: "0.9.0" });
+const server = new McpServer({ name: "prismlauncher-mcp", version: "0.9.1" });
 
 function text(value: unknown) {
   return {
@@ -473,7 +473,7 @@ server.registerTool(
   "cross_check_mods",
   {
     description:
-      "Cross-source inventory of an instance's mods: joins the Modrinth view (jars identified by sha1) with the CurseForge view (packwiz .index entries) by project slug, and reports mods installed from BOTH sources as two different files (true duplicates), single files both sources recognize (dualTracked), mods installed from one source that also exist on the other, single-source mods, and jars neither source could identify. Matching is by slug only.",
+      "Cross-source inventory of an instance's mods: joins the Modrinth view (jars identified by sha1) with the CurseForge view (packwiz .index entries) by project slug, and reports mods installed from BOTH sources as two different files (true duplicates), single files both sources recognize (dualTracked), mods installed from one source that also exist on the other, single-source mods, and jars neither source could identify. Jars with no index entry are also identified as CurseForge files by fingerprint (modpack-bundled mods). Matching is by slug only.",
     inputSchema: { instance: z.string() },
   },
   async ({ instance }) => text(await crossCheckMods(cfg, instance)),
